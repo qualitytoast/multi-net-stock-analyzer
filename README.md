@@ -14,28 +14,42 @@ analysis. Scope is the paper's method only: no baselines, ablations or improveme
 
 ## Status
 
-Work in progress. The data pipeline, model, loss, training loop, backtest, metrics, Shapley analysis
-and 59 tests are complete, and development runs on the training and validation periods are done.
-The final 5-seed evaluation on the test period (2024-03-01 to 2026-03-01) has **not** been run yet;
-it is opened exactly once, with a frozen configuration.
+CSI300 MVP complete. The test period (2024-03-01 to 2026-03-01) was evaluated once, on 2026-11-06,
+with the frozen configuration and all 5 seeds; the opening is recorded in
+[locks/csi300_test.json](locks/csi300_test.json). **Verdict: not reproduced**: the paper's
+Det-MASO numbers, and even its own single-MLP floor, were not reached (details below).
 
-Early findings (validation period, details in DEVIATIONS.md): the paper's objective makes the
-scheduler collapse onto the two agents tied to the most common regimes, and the agents tied to rare
-regimes get almost no learning signal. Making training run at all required four documented changes
-to planned defaults (GELU, decoupled weight decay, float64, a defined score for constant agent output);
-a fifth change concerns only the excess-return benchmark.
+Main findings: the paper's objective makes the scheduler collapse onto the two agents tied to the
+most common regimes, and the agents tied to rare regimes get almost no learning signal. Making
+training run at all required four documented changes to planned defaults (GELU, decoupled weight
+decay, float64, a defined score for constant agent output); a fifth change concerns only the
+excess-return benchmark. All five were approved by the project owner (see DEVIATIONS.md).
+S&P 500 is deferred until a point-in-time data source is chosen.
 
 The market data is not included in this repository: it is downloaded by `scripts/get_cn_data.sh`
 from the community Qlib dataset (chenditc/investment_data), whose data has no explicit license, so
 the dataset is not redistributed here.
 
-## Results so far
+## Results
 
+- [Test report, 5 seeds](results/csi300/test/report.md) (the reproduction result):
+
+  | | Ours (mean +- std) | Paper (Table 5) |
+  |---|---|---|
+  | IC | 0.038 +- 0.008 | 0.081 |
+  | ICIR | 0.18 | 0.62 |
+  | Sharpe | 0.81 +- 0.29 | 1.85 |
+  | Annual return | 14.7% +- 6.0% | 31.5% |
+  | Max drawdown | 19.1% +- 3.0% | 8.5% |
+
+  Against the equal-weighted average of the stocks the portfolio could trade, the portfolio returned
+  about -4% a year (seeds range from -10% to -0.1%). On Mar 2024 to Apr 2025, the span the paper's
+  Figure 4 actually covers, mean IC was 0.058. Scheduler entropy was 0.03 of a possible 1.61 (collapsed);
+  I(Low-Vol Bull, Tail-Risk) > 0 in 4 of 5 seeds, the largest pair in 2.
+- [Validation report, 5 seeds](results/csi300/validation/report.md) (development): IC 0.062 +- 0.010,
+  ICIR 0.42; absolute portfolio returns flat in the falling 2023 market.
 - [Data QA report](results/csi300/data_report.md): splits, universe sizes, spot-price checks, missing
   values, silhouette curve (K = 2 is optimal; the paper's 5 is kept per decision D2), regime coverage.
-- [Validation report, 5 seeds](results/csi300/validation/report.md) (development only; the test period
-  is still locked): IC 0.062 +- 0.010, ICIR 0.42; absolute portfolio returns are flat in the falling
-  2023 market; the scheduler collapses onto two agents (entropy 0.014 of a possible 1.609).
 
 ## Setup
 

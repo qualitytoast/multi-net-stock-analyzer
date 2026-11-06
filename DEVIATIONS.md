@@ -82,3 +82,22 @@ CSI300 training period it names a cluster "Low-Vol Bear" whose volatility is the
 the five (above "High-Vol Bull"); it looks more like a high-volatility post-crash phase. Names are
 labels only (any one-to-one mapping between agents and clusters trains the same way), so the rule
 is not retuned after the fact; the data QA report flags the mismatch automatically.
+
+## Approval and how often change 4 fired
+
+All five changes above were approved by the project owner on 2026-11-06. The test period was then
+evaluated once with these settings (locks/csi300_test.json).
+
+Change 4 (score of 0 for a constant agent output) fired in 2 of 5 seeds, each time on one agent:
+
+| Where | Seed 0, Low-Vol Bear | Seed 4, High-Vol Bull | Seeds 1-3 |
+|---|---|---|---|
+| Training, all epochs | 1,429 of 55,713 date-steps (2.6%); 141 before the restored epoch 13 | 41 of 45,101 (0.09%); all after the restored epoch 9 | never |
+| Final model, training days | 69 of 2,653 | 0 | 0 |
+| Final model, validation days | 8 of 278 | 0 | 0 |
+| Final model, test days | 23 of 482 | 0 | 0 |
+
+On the test days it fired, the zeroed agent's scheduler weight averaged 0.0001 (max 0.002), so its
+effect on the final scores and the portfolio is negligible; the visible effect is in the Shapley
+analysis (23 single-agent coalition-days with IC set to 0). Under the plan's original abort rule,
+seeds 0 and 4 would have produced no model.

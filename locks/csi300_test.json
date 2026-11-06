@@ -1,0 +1,32 @@
+{
+  "market": "csi300",
+  "entries": [
+    {
+      "config_hash": "d2a65e9a6a237d2c",
+      "data_hash": "8e81084fb70adad6",
+      "tag": "final",
+      "seeds": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "code_sha256": "96485481d17a9fad",
+      "git_head": "f637f6cb8b35a1a1c5bf9fb5fbd5f24ca27e3132",
+      "git_dirty": false,
+      "model_sha256": {
+        "0": "8fdbd888ff47dae838c3e9c1c0ce3f40207392c055959d17100ff0e2c59d32f1",
+        "1": "4dd9881ffbcb15e1361404d3d128b0ff5d7f25699e17ef47fffaa6bec328dcd6",
+        "2": "2e8e7c2fde17b4b52d963ff3d1d9221ce92ea90b1f8a62bb2a223a778dd21e3b",
+        "3": "bedbd80f8f913690de757e0b78f3098efaa6886604c6e9bec414f217cc3a7cf6",
+        "4": "a045991033b8c75299a6dec2564d7b6d208fd2d22094599649df089fbfdc515f"
+      },
+      "panel_sha256": "4bed46523c3f7e5e5e62609ace3b3f08b5602784b2a428417a329702ee7c0583",
+      "regimes_sha256": "31499330fe496ea234bc388a5e7e4ab15044716a5c14cc74cdb3d902c907ee8d",
+      "data_sha256": "dc917293925635189e982f47d35b960c3db8a9c3f11312c937673c8afdec21aa",
+      "opened_at": "2026-11-06 09:06:21",
+      "reason": "first opening"
+    }
+  ]
+}
