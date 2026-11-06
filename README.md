@@ -82,3 +82,7 @@ src/detmaso/
   cli.py               prepare | train | evaluate
 tests/                 the plan's 30 checks (look-ahead, gradients, soft rank, metrics, Shapley, ...)
 ```
+
+## Copyright
+
+Copyright (c) 2026 Nathan Hung. All rights reserved. This code is shared for viewing only; any other use requires permission.
