@@ -9,7 +9,7 @@ import pytest
 from detmaso.data.features import FEATURE_NAMES, compute_features, rolling_spearman
 from detmaso.data.labels import forward_return
 from detmaso.data.market_state import market_state
-from detmaso.data.panel import cross_sectional_process
+from detmaso.data.panel import cross_sectional_process, make_masks
 from detmaso.data.returns import returns_one_day, returns_own_days
 from detmaso.data.splits import make_splits
 from tests.conftest import synthetic_fields
@@ -56,7 +56,8 @@ def test_market_state_uses_exactly_days_before_t():
     later = market_state(_shock(f, slice(D_POS, None))["close"], member, (5, 20, 60, 120))
     prev = market_state(_shock(f, slice(D_POS - 1, D_POS))["close"], member, (5, 20, 60, 120))
     pd.testing.assert_frame_equal(base.iloc[: D_POS + 1], later.iloc[: D_POS + 1])
-    assert not np.allclose(base.iloc[D_POS], prev.iloc[D_POS])
+    changed = ~np.isclose(base.iloc[D_POS].to_numpy(), prev.iloc[D_POS].to_numpy())
+    assert changed.all(), base.columns[~changed].tolist()
 
 
 # 15 ------------------------------------------------------------------------------------------
@@ -75,9 +76,7 @@ def test_scores_and_picks_ignore_labels_and_future_prices():
 
     def day_inputs(fields):
         feats = compute_features(fields)
-        traded = fields["close"].notna()
-        universe = member & traded.shift(1, fill_value=False)
-        tradable = universe & traded
+        universe, tradable, label_ok, _ = make_masks(fields["close"], member, 20)
         X = np.stack([cross_sectional_process(feats[n], universe, 5.0).iloc[D_POS].fillna(0).to_numpy() for n in FEATURE_NAMES], -1)
         s = market_state(fields["close"], member, (5, 20, 60, 120)).iloc[D_POS].to_numpy()
         return X, universe.iloc[D_POS].to_numpy(), tradable.iloc[D_POS].to_numpy(), s
@@ -89,6 +88,8 @@ def test_scores_and_picks_ignore_labels_and_future_prices():
     np.testing.assert_array_equal(T1, T2)
     np.testing.assert_array_equal(s1, s2)
     assert np.isnan(forward_return(wiped["close"], 20).iloc[D_POS]).all()  # labels really are gone
+    assert make_masks(f["close"], member, 20)[2].iloc[D_POS].any()
+    assert not make_masks(wiped["close"], member, 20)[2].iloc[D_POS].any()  # only label_ok changes
 
     torch.manual_seed(0)
     model = DetMASO(5, 34, (8, 4), activation="gelu").double()
@@ -123,6 +124,41 @@ def test_suspension_handling():
     assert np.isnan(one_day.iloc[4])  # market state skips stocks that did not trade on both days
     rolling = own.rolling(5, min_periods=4).std()
     assert np.isnan(rolling.iloc[5])  # only 3 valid returns in the window ending at row 5
+
+
+def test_window_coverage_rule_in_production_features():
+    from detmaso.data.returns import min_obs
+
+    assert min_obs(5, 0.8) == 4
+    f = synthetic_fields(suspend=False)
+    row = D_POS
+    # Stock 0: 2 missing returns in the 5-day window ending at row-1 -> 3 valid -> vol_5 NaN.
+    # Stock 2: 1 missing return -> 4 valid -> vol_5 finite.
+    for k in f:
+        f[k].iloc[row - 3, 0] = np.nan
+        f[k].iloc[row - 5, 0] = np.nan
+        f[k].iloc[row - 3, 2] = np.nan
+    feats = compute_features(f)
+    assert np.isnan(feats["vol_5"].iloc[row, 0])
+    assert np.isfinite(feats["vol_5"].iloc[row, 2])
+
+
+def test_market_series_uses_only_members_that_traded_both_days():
+    from detmaso.data.market_state import daily_market_series
+
+    dates = pd.bdate_range("2021-01-01", periods=6)
+    close = pd.DataFrame({
+        "A": [10.0, 10.0, 10.5, 10.5, 10.5, 10.5],
+        "B": [20.0, np.nan, 40.0, 40.0, 40.0, 40.0],  # resumes on day 2 with a +100% move
+        "C": [5.0, 5.0, 50.0, 50.0, 50.0, 50.0],      # +900% but not an index member
+        "D": [8.0, 8.0, 8.4, 8.4, 8.4, 8.4],
+    }, index=dates)  # fmt: skip
+    member = pd.DataFrame(True, index=dates, columns=close.columns)
+    member["C"] = False
+    daily = daily_market_series(close, member)
+    expected = np.mean([0.05, 0.05])  # A and D only: B did not trade on day 1, C is not a member
+    assert daily["r_mkt"].iloc[2] == pytest.approx(expected)
+    assert daily["disp"].iloc[2] == pytest.approx(0.0)
 
 
 def test_rolling_spearman_matches_direct_computation():

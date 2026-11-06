@@ -55,9 +55,9 @@ class RegimeConfig:
 @dataclass(frozen=True)
 class ModelConfig:
     hidden: tuple[int, ...] = (64, 32, 16)  # A17
-    activation: str = "relu"  # A17: "relu" or "gelu"
-    dtype: str = "float32"  # A35: "float32" or "float64"
-    encoder_hidden: int = 16  # A19
+    activation: str = "gelu"  # A17, revised to GELU (DEVIATIONS 1); "relu" also supported
+    dtype: str = "float64"  # A35, revised to float64 (DEVIATIONS 3); "float32" also supported
+    encoder_hidden: int = 16  # A19: hidden width of each per-window MLP (its output is fixed at 16)
     head_hidden: int = 32  # paper: W_1 in R^{32x16}
 
 
@@ -80,14 +80,14 @@ class TrainConfig:
     lr_max: float = 1e-3
     lr_min: float = 1e-5
     weight_decay: float = 1e-4
-    weight_decay_mode: str = "coupled"  # A29: "coupled" (Adam L2) or "decoupled" (AdamW)
+    weight_decay_mode: str = "decoupled"  # A29, revised to AdamW (DEVIATIONS 2); "coupled" = Adam L2
     clip_norm: float = 1.0
     max_epochs: int = 200
     patience: int = 8
     smooth: int = 3
     seeds: tuple[int, ...] = (0, 1, 2, 3, 4)
     device: str = "auto"  # A35 / D9: CUDA if present, else CPU (Apple GPU not used)
-    dead_std: float = 1e-6  # A27: raw output spread below this counts as a constant agent
+    dead_std: float = 1e-12  # A27: raw spread below this = constant output (float64 scale; DEVIATIONS 3-4)
     max_skip_frac: float = 0.01
     max_consecutive_skips: int = 20
     max_nonfinite: int = 10
@@ -124,6 +124,12 @@ class Config:
     def hash(self) -> str:
         """Stable hash of everything that affects results (used for the test-period lock)."""
         payload = json.dumps(self.to_dict(), sort_keys=True, default=str).encode()
+        return hashlib.sha256(payload).hexdigest()[:16]
+
+    def data_hash(self) -> str:
+        """Hash of the sections that determine the prepared data (features, labels, regimes)."""
+        d = self.to_dict()
+        payload = json.dumps({k: d[k] for k in ("data", "splits", "features", "regimes")}, sort_keys=True, default=str).encode()
         return hashlib.sha256(payload).hexdigest()[:16]
 
 

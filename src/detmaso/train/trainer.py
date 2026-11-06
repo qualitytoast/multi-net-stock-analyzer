@@ -60,7 +60,7 @@ def predict(model: DetMASO, panel: Panel, positions: torch.Tensor, device: torch
         pos = positions[i : i + chunk]
         dtype = next(model.parameters()).dtype
         o = model(panel.X[pos].to(device=device, dtype=dtype), panel.universe[pos].to(device), panel.s_sched[pos].to(device=device, dtype=dtype))
-        for k in ("alphas", "alpha_hat", "w", "a"):
+        for k in ("alphas", "alpha_hat", "w", "a", "logits", "raw_std"):
             outs[k].append(getattr(o, k).cpu())
     return {k: torch.cat(v).numpy() for k, v in outs.items()}
 
@@ -178,6 +178,7 @@ def train_seed(cfg: Config, panel: Panel, splits: Splits, seed: int, out_dir: Pa
             acc["w"].append(out.w[0].detach().cpu().numpy())
             acc["raw_std"].append(out.raw_std[0].cpu().numpy())
             acc["dead"].append((out.raw_std[0] < tc.dead_std).cpu().numpy())
+            acc["n_live"].append(cfg.regimes.n_agents - terms.n_dead)
 
         n_skipped = sum(skips.values())
         if n_skipped > tc.max_skip_frac * len(train_pos):

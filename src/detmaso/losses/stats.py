@@ -20,7 +20,7 @@ def masked_zscore(x: torch.Tensor, mask: torch.Tensor, dim: int = -1) -> torch.T
     mean = (x * m).sum(dim=dim, keepdim=True) / n
     centered = (x - mean) * m
     var = (centered * centered).sum(dim=dim, keepdim=True) / n
-    return centered / torch.sqrt(var).clamp_min(STD_FLOOR)
+    return centered / torch.sqrt(var.clamp_min(STD_FLOOR * STD_FLOOR))
 
 
 def masked_std(x: torch.Tensor, mask: torch.Tensor, dim: int = -1) -> torch.Tensor:
@@ -34,8 +34,8 @@ def masked_std(x: torch.Tensor, mask: torch.Tensor, dim: int = -1) -> torch.Tens
 def zscore_rows(x: torch.Tensor) -> torch.Tensor:
     """Population z-score of each row (no mask)."""
     centered = x - x.mean(dim=-1, keepdim=True)
-    std = torch.sqrt((centered * centered).mean(dim=-1, keepdim=True))
-    return centered / std.clamp_min(STD_FLOOR)
+    var = (centered * centered).mean(dim=-1, keepdim=True)
+    return centered / torch.sqrt(var.clamp_min(STD_FLOOR * STD_FLOOR))
 
 
 def hard_rank(y: np.ndarray) -> np.ndarray:

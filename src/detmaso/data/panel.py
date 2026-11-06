@@ -47,7 +47,10 @@ class Panel:
     index_close: torch.Tensor  # [T] index level on t (plots only)
 
     def date_pos(self, dates: pd.DatetimeIndex) -> torch.Tensor:
-        return torch.as_tensor(self.dates.get_indexer(dates), dtype=torch.long)
+        pos = self.dates.get_indexer(dates)
+        if (pos < 0).any():
+            raise KeyError(f"{int((pos < 0).sum())} dates are not in the panel")
+        return torch.as_tensor(pos, dtype=torch.long)
 
     def save(self, path: Path) -> None:
         payload = {f.name: getattr(self, f.name) for f in dc_fields(self)}
@@ -71,6 +74,21 @@ def cross_sectional_process(F: pd.DataFrame, universe: pd.DataFrame, clip: float
     return Z.where(universe)
 
 
+def make_masks(close: pd.DataFrame, member: pd.DataFrame, horizon: int):
+    """The three stock masks (plan A3) and the labels, from closes and point-in-time membership.
+
+    universe_t: member on t AND traded on t-1 (known before t; drives scores and the portfolio pool)
+    tradable_t: universe_t AND traded on t (can be bought at t's close)
+    label_ok_t: universe_t AND the horizon-day label exists (used only by the loss, IC and Shapley)
+    """
+    traded = close.notna()
+    universe = member & traded.shift(1, fill_value=False)
+    tradable = universe & traded
+    labels = forward_return(close, horizon)
+    label_ok = universe & labels.notna()
+    return universe, tradable, label_ok, labels
+
+
 @dataclass
 class PreparedData:
     raw: RawPanel
@@ -86,11 +104,7 @@ class PreparedData:
 def build(cfg: Config, rebuild_raw: bool = False) -> PreparedData:
     raw = load_or_build_raw_panel(cfg, rebuild=rebuild_raw)
     close = raw.fields["close"]
-    traded = close.notna()
-    universe = raw.member & traded.shift(1, fill_value=False)
-    tradable = universe & traded
-    labels = forward_return(close, cfg.features.horizon)
-    label_ok = universe & labels.notna()
+    universe, tradable, label_ok, labels = make_masks(close, raw.member, cfg.features.horizon)
     r_next = next_day_return(close)
 
     log.info("computing features")
@@ -181,6 +195,7 @@ def save_prepared(data: PreparedData, cfg: Config) -> None:
     data.state.to_parquet(d / "market_state.parquet")
     meta = {
         "data_tag": cfg.data.data_tag,
+        "data_hash": cfg.data_hash(),
         "config_hash": cfg.hash(),
         "splits": {k: [str(v[0].date()), str(v[-1].date()), len(v)] for k, v in vars(data.splits).items()},
     }
@@ -189,6 +204,12 @@ def save_prepared(data: PreparedData, cfg: Config) -> None:
 
 def load_prepared(cfg: Config) -> tuple[Panel, RegimeModel, Splits]:
     d = artifacts_dir(cfg)
+    meta = json.loads((d / "meta.json").read_text())
+    if meta.get("data_hash") != cfg.data_hash():
+        raise ValueError(
+            f"prepared data was built with data config {meta.get('data_hash')}, current is {cfg.data_hash()}; "
+            "re-run `detmaso prepare`"
+        )
     panel = Panel.load(d / "panel.pt")
     regimes = RegimeModel.from_json(d / "regimes.json")
     splits = make_splits(panel.dates, cfg.splits.train, cfg.splits.valid, cfg.splits.test, cfg.splits.purge_days)

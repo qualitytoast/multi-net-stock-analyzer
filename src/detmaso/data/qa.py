@@ -1,4 +1,4 @@
-"""Data QA report (plan Section 5 step 13). Never touches the test period's labels."""
+"""Data QA report (plan Section 5 step 13). Label and missing-value statistics use only dates before the test period; the spot prices are data-integrity checks."""
 
 from __future__ import annotations
 
@@ -34,15 +34,16 @@ def write_data_report(data: PreparedData, cfg: Config) -> Path:
     for name, idx in vars(data.splits).items():
         lines.append(f"| {name} | {idx[0].date()} | {idx[-1].date()} | {len(idx)} |")
 
-    uni = p.universe.sum(1).numpy()
-    lab = p.label_ok.sum(1).numpy()
+    pre_test = (p.dates < pd.Timestamp(cfg.splits.test[0]))
+    uni = p.universe.sum(1).numpy()[pre_test]
+    lab = p.label_ok.sum(1).numpy()[pre_test]
     lines += [
         "",
-        "## Cross-section size",
+        "## Cross-section size (train and validation dates only)",
         "",
         f"- Universe per day (members that traded the day before): min {uni.min()}, median {np.median(uni):.0f}, max {uni.max()}",
         f"- Stocks with a 20-day label per day: min {lab.min()}, median {np.median(lab):.0f}",
-        f"- Smallest universe on {p.dates[uni.argmin()].date()}",
+        f"- Smallest universe on {p.dates[pre_test][uni.argmin()].date()}",
     ]
 
     close, factor = data.raw.fields["close"], data.raw.fields["factor"]
@@ -54,8 +55,8 @@ def write_data_report(data: PreparedData, cfg: Config) -> Path:
             lines.append(f"| {code} | {d} | {val:.2f} | {expected} |")
 
     universe = data.masks["universe"]
-    lines += ["", "## Missing values per feature (share of universe stock-days, before filling with 0)", ""]
-    model_rows = universe.index.isin(p.dates)
+    lines += ["", "## Missing values per feature (share of universe stock-days before the test period, before filling with 0)", ""]
+    model_rows = universe.index.isin(p.dates[pre_test])
     uni_model = universe.loc[model_rows]
     nan_rates = {
         name: float((frame.loc[model_rows].isna() & uni_model).to_numpy().sum() / uni_model.to_numpy().sum())
@@ -81,6 +82,17 @@ def write_data_report(data: PreparedData, cfg: Config) -> Path:
         lines.append(f"| {i + 1} {name} | {cov[i]:.1%} | {paper[i]}% |")
     cent = pd.DataFrame(reg.centroids * reg.std + reg.mean, index=reg.names, columns=reg.state_names)
     lines += ["", "Centroids in raw units (daily returns):", "", md_frame(cent.round(4))]
+    v_vol = (cent["sigma20"] + cent["sigma60"]) / 2
+    flags = []
+    if v_vol["Low-Vol Bear"] > v_vol["High-Vol Bull"]:
+        flags.append("the cluster named Low-Vol Bear is more volatile than High-Vol Bull")
+    if v_vol["Low-Vol Bull"] > v_vol["High-Vol Bull"]:
+        flags.append("the cluster named Low-Vol Bull is more volatile than High-Vol Bull")
+    lines += [
+        "",
+        "Naming-rule check (plan A16 is fixed in advance; names are labels only): "
+        + ("; ".join(flags) + "." if flags else "names are consistent with the centroid volatilities."),
+    ]
 
     # Pipeline sanity check (test 30): single-feature ICs on the TRAINING period only.
     lines += ["", "## Single-feature IC on the training period (pipeline sanity check)", ""]

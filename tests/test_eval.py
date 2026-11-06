@@ -10,7 +10,7 @@ import pytest
 
 from detmaso.eval.backtest import top_decile_backtest
 from detmaso.eval.metrics import ic_summary, portfolio_metrics
-from detmaso.eval.shapley import interaction_index, shapley_weight
+from detmaso.eval.shapley import coalition_values, interaction_index, shapley_weight
 
 
 # 22 ------------------------------------------------------------------------------------------
@@ -89,3 +89,69 @@ def test_shapley_symmetry_and_weights():
     total = sum(math.comb(3, s) * shapley_weight(s, 5) for s in range(4))
     assert total == pytest.approx(1.0)
     assert [shapley_weight(s, 5) for s in range(4)] == pytest.approx([1 / 4, 1 / 12, 1 / 12, 1 / 4])
+
+
+# E7: timing through the production label and date functions ----------------------------------
+def test_backtest_return_is_next_days_close_to_close():
+    from detmaso.data.labels import next_day_return
+    from detmaso.eval.report import next_dates
+
+    dates = pd.bdate_range("2021-01-04", periods=6)
+    close = pd.DataFrame({"A": [10, 11, 12, 13, 14, 15.0], "B": [10, 9, 8, 7, 6, 5.0], "C": [10, 10, 10, 20, 20, 20.0]}, index=dates)
+    r_next = next_day_return(close).to_numpy()
+    t = 2  # score C highest on day 2: its return from close(2) to close(3) is +100%
+    alpha = np.array([[0.0, -1.0, 1.0]])
+    port, _, picks = top_decile_backtest(alpha, np.ones((1, 3), dtype=bool), r_next[t : t + 1], 0.10)
+    assert picks[0].tolist() == [2] and port[0] == pytest.approx(close.iloc[3, 2] / close.iloc[2, 2] - 1)
+    assert next_dates(dates[2:3], dates)[0] == dates[3]
+
+
+# E8: coalition values on a tiny case ----------------------------------------------------------
+def test_coalition_values_match_direct_ics():
+    from detmaso.losses.stats import daily_spearman
+
+    rng = np.random.default_rng(0)
+    T, n, N = 6, 3, 25
+    alphas = rng.normal(size=(T, n, N))
+    logits = rng.normal(size=(T, n))
+    labels = rng.normal(size=(T, N))
+    ok = np.ones((T, N), dtype=bool)
+    v, degenerate = coalition_values(alphas, logits, labels, ok)
+    assert v[0] == 0.0 and np.isfinite(v).all() and degenerate.sum() == 0
+    for i in range(n):
+        assert v[1 << i] == pytest.approx(daily_spearman(alphas[:, i], labels, ok).mean())
+    w = np.exp(logits) / np.exp(logits).sum(1, keepdims=True)
+    full = np.einsum("tn,tnk->tk", w, alphas)
+    assert v[(1 << n) - 1] == pytest.approx(daily_spearman(full, labels, ok).mean())
+    alphas[:, 1] = 0.0  # a dead agent: its singleton coalition has IC 0 on every day
+    v2, degenerate2 = coalition_values(alphas, logits, labels, ok)
+    assert v2[1 << 1] == 0.0 and degenerate2[1 << 1] == T
+
+
+# E9: Qlib oracle and verdict rules ------------------------------------------------------------
+def test_qlib_forms_match_qlib_risk_analysis():
+    from qlib.contrib.evaluate import risk_analysis
+
+    r = np.random.default_rng(1).normal(0.0005, 0.012, size=300)
+    ours = portfolio_metrics(r, pd.Timestamp("2024-01-01"), pd.Timestamp("2025-03-01"))
+    ra = risk_analysis(pd.Series(r), N=238, mode="sum")["risk"]
+    assert ours["qlib_ar"] == pytest.approx(ra["annualized_return"])
+    assert ours["qlib_ir"] == pytest.approx(ra["information_ratio"])
+    assert ours["qlib_mdd"] == pytest.approx(-ra["max_drawdown"])
+
+
+def test_verdict_rules_in_order():
+    from detmaso.eval.report import band_status, verdict
+
+    good_q = {f"q{i}_ok": True for i in range(1, 5)}
+    base = {"ic": 0.081, "sharpe": 1.85, "ar": 0.315, "mdd": 0.085}
+    assert verdict("csi300", base, good_q) == ("Reproduced", [])
+    assert verdict("csi300", {**base, "ic": 0.054}, good_q)[0] == "Not reproduced"  # floor first
+    assert verdict("sp500", {**base, "ic": 0.050, "sharpe": 1.0}, good_q)[0] != "Not reproduced"  # per-market floor
+    partial = verdict("csi300", {**base, "ic": 0.060}, {**good_q, "q2_ok": False})
+    assert partial[0] == "Partially reproduced" and "q2" in partial[1]
+    assert verdict("csi300", {**base, "ic": 0.060}, {**good_q, "q2_ok": False, "q3_ok": False})[0] == "Inconclusive"
+    assert band_status("ic", 0.081 + 0.016, 0.081) == "exceeds paper"
+    assert band_status("ic", 0.081 - 0.015, 0.081) == "reproduced band"
+    assert band_status("mdd", 0.085 + 0.05, 0.085) == "close band"
+    assert band_status("mdd", 0.02, 0.085) == "exceeds paper"

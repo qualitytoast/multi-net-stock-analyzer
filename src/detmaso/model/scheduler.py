@@ -12,13 +12,13 @@ from torch import nn
 
 
 class Scheduler(nn.Module):
-    def __init__(self, n_agents: int, n_windows: int = 4, stats_per_window: int = 3, enc_dim: int = 16, head_hidden: int = 32):
+    def __init__(self, n_agents: int, n_windows: int = 4, stats_per_window: int = 3, enc_hidden: int = 16, enc_dim: int = 16, head_hidden: int = 32):
         super().__init__()
         self.n_windows = n_windows
         self.stats_per_window = stats_per_window
         self.encoders = nn.ModuleList(
             [
-                nn.Sequential(nn.Linear(stats_per_window, enc_dim), nn.ReLU(), nn.Linear(enc_dim, enc_dim))
+                nn.Sequential(nn.Linear(stats_per_window, enc_hidden), nn.ReLU(), nn.Linear(enc_hidden, enc_dim))
                 for _ in range(n_windows)
             ]
         )

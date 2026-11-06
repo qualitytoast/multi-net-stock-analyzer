@@ -29,7 +29,7 @@ class DetMASO(nn.Module):
         n_agents: int,
         d_in: int,
         hidden: tuple[int, ...],
-        enc_dim: int = 16,
+        enc_hidden: int = 16,
         head_hidden: int = 32,
         activation: str = "relu",
         dead_std: float = 1e-12,
@@ -38,7 +38,7 @@ class DetMASO(nn.Module):
         self.dead_std = dead_std
         # Independent parameters per agent (no sharing), created in order from the seeded RNG.
         self.agents = nn.ModuleList([AgentMLP(d_in, hidden, activation) for _ in range(n_agents)])
-        self.scheduler = Scheduler(n_agents, enc_dim=enc_dim, head_hidden=head_hidden)
+        self.scheduler = Scheduler(n_agents, enc_hidden=enc_hidden, head_hidden=head_hidden)  # h_w in R^16 (Eq. 6-8)
 
     @classmethod
     def from_config(cls, cfg: Config, d_in: int) -> "DetMASO":
@@ -46,7 +46,7 @@ class DetMASO(nn.Module):
             n_agents=cfg.regimes.n_agents,
             d_in=d_in,
             hidden=cfg.model.hidden,
-            enc_dim=cfg.model.encoder_hidden,
+            enc_hidden=cfg.model.encoder_hidden,
             head_hidden=cfg.model.head_hidden,
             activation=cfg.model.activation,
             dead_std=cfg.train.dead_std,

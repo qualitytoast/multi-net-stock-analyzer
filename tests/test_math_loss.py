@@ -147,6 +147,25 @@ def test_one_step_on_a_single_term_improves_it(term, overrides):
     assert after > before
 
 
+def test_one_step_on_the_diversity_term_reduces_neg_logdet():
+    before, after = _step_increases("neg_logdet", {"c_ic": 0.0, "c_sr": 0.0, "c_div": 1.0, "c_ent": 0.0})
+    assert after < before
+
+
+def test_rank_eps_uses_the_label_ok_count(monkeypatch):
+    import detmaso.losses.objective as obj
+
+    seen = []
+    real = obj.soft_rank
+    monkeypatch.setattr(obj, "soft_rank", lambda x, eps: (seen.append((x.shape[1], eps)), real(x, eps))[1])
+    ok = torch.zeros(40, dtype=torch.bool)
+    ok[:30] = True
+    al = zscore_rows(torch.randn(3, 40))
+    w = torch.full((3,), 1 / 3)
+    _loss_fn(3, kappa_soft=0.5)(al, al.mean(0), torch.zeros(3), w, torch.randn(40), ok, 0, SharpeState())
+    assert seen == [(30, pytest.approx(0.5 * 30 / 100))]
+
+
 # 6 -------------------------------------------------------------------------------------------
 def test_sharpe_history_is_detached_constants():
     state = _sharpe_with_history()
@@ -282,5 +301,50 @@ def test_dead_agent_gets_zero_score_and_others_keep_learning():
     terms = DetMASOLoss(LossConfig(), 5)(out.alphas[0], out.alpha_hat[0], out.logits[0], out.w[0], torch.randn(40) * 0.05, U[0], 0, _sharpe_with_history())
     assert torch.isfinite(terms.loss) and terms.n_dead == 1
     terms.loss.backward()
+    for p in model.parameters():
+        assert p.grad is None or torch.isfinite(p.grad).all()
+    assert all(p.grad is None or float(p.grad.abs().sum()) == 0.0 for p in model.agents[3].parameters())
     for i in (0, 1, 2, 4):
         assert sum(float(p.grad.abs().sum()) for p in model.agents[i].parameters()) > 0
+
+
+def test_trainer_survives_a_permanently_dead_agent(tmp_path, monkeypatch):
+    """A dead agent (constant output) must not cause non-finite skips; its days are counted."""
+    import json as _json
+
+    import detmaso.train.trainer as trainer_mod
+    from detmaso.model.detmaso import DetMASO
+    from tests.conftest import synthetic_config
+    from tests.test_end_to_end import synthetic_panel_and_splits
+
+    real_from_config = DetMASO.from_config
+
+    def dead_from_config(cfg, d_in):
+        model = real_from_config(cfg, d_in)
+        torch.nn.init.zeros_(model.agents[3].net[-1].weight)
+        return model
+
+    monkeypatch.setattr(trainer_mod.DetMASO, "from_config", staticmethod(dead_from_config))
+    cfg = synthetic_config(tmp_path, train={"max_epochs": 3})
+    panel, splits = synthetic_panel_and_splits()
+    trainer_mod.train_seed(cfg, panel, splits, seed=0, out_dir=tmp_path / "s")
+    history = [_json.loads(line) for line in (tmp_path / "s" / "history.jsonl").read_text().splitlines()]
+    assert all(h["skips"]["nonfinite"] == 0 for h in history)
+    assert all(h["dead_days"][3] == len(splits.train_fit) for h in history)
+
+
+def test_trainer_skips_a_nonfinite_date_and_continues(tmp_path):
+    from tests.conftest import synthetic_config
+    from tests.test_end_to_end import synthetic_panel_and_splits
+    from detmaso.train.trainer import train_seed
+
+    cfg = synthetic_config(tmp_path, train={"max_epochs": 3})
+    panel, splits = synthetic_panel_and_splits()
+    t = int(panel.date_pos(splits.train_fit[10:11])[0])
+    panel.y[t, 0] = float("nan")  # a corrupt label on one training date -> non-finite loss
+    summary = train_seed(cfg, panel, splits, seed=0, out_dir=tmp_path / "s")
+    import json as _json
+
+    history = [_json.loads(line) for line in (tmp_path / "s" / "history.jsonl").read_text().splitlines()]
+    assert [h["skips"]["nonfinite"] for h in history] == [1, 1, 1]
+    assert all(np.isfinite(h["loss"]) for h in history) and summary["nonfinite_events"] == 3

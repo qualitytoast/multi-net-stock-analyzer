@@ -61,3 +61,24 @@ only one that trains stably. Both settings are config values (`model.activation`
 - **Finding for the write-up:** with the paper's coefficients, the scheduler does not keep weight on
   all five agents; the log-det barrier protects diversity in correlation space but, because outputs
   are z-scored, not against an agent's output collapsing. This is reported, not "fixed".
+- **Details (added after code review):** the "constant output" threshold is 1e-12 in float64 (the
+  plan's 1e-6 was set with float32 in mind; see entry 3). Diversity diagnostics (mean abs
+  correlation, log det, smallest eigenvalue) are computed over the agents that are live that day,
+  and the number of live agents is logged next to them. Shapley coalitions whose score is constant
+  on a day (for example, only dead agents) get IC 0 for that day, consistent with the definition above.
+
+## 5. Excess-return benchmark: all index members -> eligible members (plan A40)
+
+- **Planned default:** excess returns against the equal-weighted average of all index members.
+- **Change:** against the equal-weighted average of the *eligible* members, i.e. index members that
+  traded on t-1 and on t, the same pool the portfolio picks from. This is the natural investable
+  benchmark; members that cannot be traded that day are left out of both. Headline metrics use
+  absolute returns and are unaffected.
+
+## Finding (not a deviation): one regime name does not fit its cluster
+
+The regime-naming rule (plan A16) was fixed before seeing data and is applied as written. On the
+CSI300 training period it names a cluster "Low-Vol Bear" whose volatility is the second highest of
+the five (above "High-Vol Bull"); it looks more like a high-volatility post-crash phase. Names are
+labels only (any one-to-one mapping between agents and clusters trains the same way), so the rule
+is not retuned after the fact; the data QA report flags the mismatch automatically.

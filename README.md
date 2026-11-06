@@ -15,18 +15,27 @@ analysis. Scope is the paper's method only: no baselines, ablations or improveme
 ## Status
 
 Work in progress. The data pipeline, model, loss, training loop, backtest, metrics, Shapley analysis
-and 49 tests are complete, and development runs on the training and validation periods are done.
+and 59 tests are complete, and development runs on the training and validation periods are done.
 The final 5-seed evaluation on the test period (2024-03-01 to 2026-03-01) has **not** been run yet;
 it is opened exactly once, with a frozen configuration.
 
 Early findings (validation period, details in DEVIATIONS.md): the paper's objective makes the
 scheduler collapse onto the two agents tied to the most common regimes, and the agents tied to rare
 regimes get almost no learning signal. Making training run at all required four documented changes
-to planned defaults (GELU, decoupled weight decay, float64, a defined score for constant agent output).
+to planned defaults (GELU, decoupled weight decay, float64, a defined score for constant agent output);
+a fifth change concerns only the excess-return benchmark.
 
 The market data is not included in this repository: it is downloaded by `scripts/get_cn_data.sh`
 from the community Qlib dataset (chenditc/investment_data), whose data has no explicit license, so
 the dataset is not redistributed here.
+
+## Results so far
+
+- [Data QA report](results/csi300/data_report.md): splits, universe sizes, spot-price checks, missing
+  values, silhouette curve (K = 2 is optimal; the paper's 5 is kept per decision D2), regime coverage.
+- [Validation report, 5 seeds](results/csi300/validation/report.md) (development only; the test period
+  is still locked): IC 0.062 +- 0.010, ICIR 0.42; absolute portfolio returns are flat in the falling
+  2023 market; the scheduler collapses onto two agents (entropy 0.014 of a possible 1.609).
 
 ## Setup
 
@@ -34,7 +43,7 @@ the dataset is not redistributed here.
 # Python 3.12 is required (pyqlib 0.9.7 has no 3.13 wheels); uv installs it for you.
 uv sync
 ./scripts/get_cn_data.sh        # pinned community Qlib CN dataset, verified by sha256 (about 570 MB)
-uv run pytest                   # 49 tests; data-dependent ones skip until `prepare` has run
+uv run pytest                   # 59 tests; data-dependent ones skip until `prepare` has run
 ```
 
 ## Run
@@ -46,9 +55,11 @@ uv run detmaso evaluate --config configs/csi300.yaml --seeds 0 1 2 3 4 --tag fin
 uv run detmaso evaluate --config configs/csi300.yaml --seeds 0 1 2 3 4 --tag final --split test --unlock-test
 ```
 
-The test period (2024-03-01 to 2026-03-01) is locked: evaluating it needs `--unlock-test`, and the
-first such run records the config hash in `runs/csi300/test_lock.json`; a later test evaluation with a
-different configuration is refused. Development uses the training and validation periods only.
+The test period (2024-03-01 to 2026-03-01) is locked. Evaluating it needs `--unlock-test` and an
+explicit `--tag`, always uses all configured seeds, and is recorded in the git-tracked
+`locks/csi300_test.json` with the config and data hashes, a fingerprint of the source code and the
+sha256 of every model. Re-running an identical evaluation is allowed; anything different is refused
+unless `--extra-test-run "reason"` records it. Development uses the training and validation periods only.
 
 ## Outputs
 

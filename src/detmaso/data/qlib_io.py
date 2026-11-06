@@ -91,6 +91,8 @@ def save_raw_panel(panel: RawPanel, cfg: Config) -> None:
         "data_sha256": cfg.data.data_sha256,
         "load_start": cfg.data.load_start,
         "load_end": cfg.data.load_end,
+        "universe": cfg.data.universe,
+        "index_symbol": cfg.data.index_symbol,
         "n_codes": len(panel.codes),
         "n_dates": len(panel.calendar),
     }
@@ -99,6 +101,18 @@ def save_raw_panel(panel: RawPanel, cfg: Config) -> None:
 
 def load_or_build_raw_panel(cfg: Config, rebuild: bool = False) -> RawPanel:
     d = cache_dir(cfg)
+    wanted = {
+        "data_tag": cfg.data.data_tag,
+        "load_start": cfg.data.load_start,
+        "load_end": cfg.data.load_end,
+        "universe": cfg.data.universe,
+        "index_symbol": cfg.data.index_symbol,
+    }
+    if (d / "meta.json").exists():
+        meta = json.loads((d / "meta.json").read_text())
+        if any(meta.get(k) != v for k, v in wanted.items()):
+            log.info("raw cache does not match the config %s; rebuilding", wanted)
+            rebuild = True
     if not rebuild and (d / "meta.json").exists():
         fields = {f: pd.read_parquet(d / f"{f}.parquet") for f in RAW_FIELDS}
         member = pd.read_parquet(d / "member.parquet")

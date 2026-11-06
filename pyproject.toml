@@ -37,3 +37,7 @@ addopts = "-q"
 markers = [
     "data: tests that need the downloaded Qlib dataset (skipped if it is missing)",
 ]
+filterwarnings = [
+    "ignore::DeprecationWarning:qlib.*",
+    "ignore:risk_analysis freq will be ignored",
+]
