@@ -1,0 +1,47 @@
+# Det-MASO reproduction on CSI300. Values not listed here use the defaults in
+# src/detmaso/config.py, each of which is tagged with its plan ASSUMPTION / decision ID.
+market: csi300
+run_dir: runs/csi300
+
+data:
+  provider_uri: ~/.qlib/qlib_data/cn_data_2026-11-04
+  region: cn
+  data_tag: "2026-11-04"
+  data_sha256: dc917293925635189e982f47d35b960c3db8a9c3f11312c937673c8afdec21aa
+  universe: csi300
+  index_symbol: SH000300
+  load_start: "2011-01-01"
+  load_end: "2026-04-30"
+
+splits:
+  train: ["2012-01-01", "2022-12-31"]
+  valid: ["2023-01-01", "2024-02-28"]
+  test: ["2024-03-01", "2026-03-01"]
+  purge_days: 20
+  sub_window: ["2024-03-01", "2025-04-18"]
+
+model:
+  # A17 revised (see DEVIATIONS.md, entry 1): ReLU agents died during training (all units in the
+  # last hidden layer permanently inactive); GELU is listed first among the paper's activations.
+  activation: gelu
+  # A35 revised (DEVIATIONS.md, entry 3): agent output scales drift (outputs are z-scored, so the
+  # loss ignores scale); float64 keeps the z-scored pattern exact when a starved agent's scale is tiny.
+  dtype: float64
+
+loss:
+  c_ic: 1.0
+  c_sr: 0.5
+  c_div: 0.1
+  c_ent: 0.01
+  lambda_mask: 0.1
+  kappa_soft: 1.0
+
+train:
+  # A29 revised (see DEVIATIONS.md, entry 2): Adam's coupled L2 shrinks rare-regime agents toward
+  # zero output; decoupled weight decay (AdamW) keeps all agents stable. Value unchanged (1e-4).
+  weight_decay_mode: decoupled
+  dead_std: 1.0e-12  # float64-appropriate threshold for a constant agent output (A27)
+  max_epochs: 200
+  patience: 8
+  seeds: [0, 1, 2, 3, 4]
+  device: auto
