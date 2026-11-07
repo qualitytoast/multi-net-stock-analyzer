@@ -102,7 +102,7 @@ class DetMASOLoss:
         w: torch.Tensor,  # [n]
         y: torch.Tensor,  # [N] 20-day forward returns
         label_ok: torch.Tensor,  # [N] bool
-        regime: int,  # agent index of today's regime
+        regime: int | None,  # agent index of today's regime; None = no regime mask (single network)
         sharpe: SharpeState,
     ) -> LossTerms:
         c = self.cfg
@@ -131,8 +131,11 @@ class DetMASOLoss:
 
         log_w = torch.log_softmax(logits.double(), dim=-1)
         entropy = -(log_w.exp() * log_w).sum()
-        mask = torch.full((self.n_agents,), c.lambda_mask, dtype=torch.float64, device=a.device)
-        mask[regime] = 1.0
+        if regime is None:
+            mask = torch.ones(self.n_agents, dtype=torch.float64, device=a.device)
+        else:
+            mask = torch.full((self.n_agents,), c.lambda_mask, dtype=torch.float64, device=a.device)
+            mask[regime] = 1.0
         ic_term = (w.double() * mask * ic).sum()
         loss = -c.c_ic * ic_term - c.c_sr * sr + c.c_div * nld - c.c_ent * entropy
 
@@ -154,7 +157,7 @@ class DetMASOLoss:
             ic=ic.detach().cpu().numpy(),
             mean_abs_corr=float(off.abs().mean()),
             logdet_raw=float(logabs) if float(sign) > 0 else -math.inf,
-            lambda_min=float(eig.min()),
+            lambda_min=float(eig.min()) if k > 0 else float("nan"),
             affine_share=float(affine),
             cholesky_retries=retries,
             n_dead=self.n_agents - k,

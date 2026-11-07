@@ -24,7 +24,7 @@ from detmaso.data.panel import Panel
 from detmaso.data.splits import Splits
 from detmaso.losses.objective import DetMASOLoss, SharpeState
 from detmaso.losses.stats import daily_spearman
-from detmaso.model.detmaso import DetMASO
+from detmaso.model.factory import build_model
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ def lr_at(step: int, t_max: int, lr_max: float, lr_min: float) -> float:
 
 
 @torch.no_grad()
-def predict(model: DetMASO, panel: Panel, positions: torch.Tensor, device: torch.device, chunk: int = 128):
+def predict(model: torch.nn.Module, panel: Panel, positions: torch.Tensor, device: torch.device, chunk: int = 128):
     """Frozen-model outputs for many dates at once (dates are independent at inference)."""
     model.eval()
     outs = defaultdict(list)
@@ -65,7 +65,7 @@ def predict(model: DetMASO, panel: Panel, positions: torch.Tensor, device: torch
     return {k: torch.cat(v).numpy() for k, v in outs.items()}
 
 
-def validation_ic(model: DetMASO, panel: Panel, positions: torch.Tensor, device: torch.device) -> float:
+def validation_ic(model: torch.nn.Module, panel: Panel, positions: torch.Tensor, device: torch.device) -> float:
     out = predict(model, panel, positions, device)
     ic = daily_spearman(out["alpha_hat"], panel.y[positions].numpy(), panel.label_ok[positions].numpy())
     return float(np.nanmean(ic))
@@ -93,11 +93,11 @@ def train_seed(cfg: Config, panel: Panel, splits: Splits, seed: int, out_dir: Pa
     torch.set_num_threads(1)
     device = resolve_device(cfg.train.device)
     dtype = getattr(torch, cfg.model.dtype)
-    model = DetMASO.from_config(cfg, d_in=panel.X.shape[-1]).to(device=device, dtype=dtype)
+    model = build_model(cfg, d_in=panel.X.shape[-1]).to(device=device, dtype=dtype)
     params = list(model.parameters())
     opt_cls = {"coupled": torch.optim.Adam, "decoupled": torch.optim.AdamW}[cfg.train.weight_decay_mode]
     opt = opt_cls(params, lr=cfg.train.lr_max, betas=(0.9, 0.999), eps=1e-8, weight_decay=cfg.train.weight_decay)
-    loss_fn = DetMASOLoss(cfg.loss, cfg.regimes.n_agents)
+    loss_fn = DetMASOLoss(cfg.loss, model.n_agents)
     coefs = {"c_ic": cfg.loss.c_ic, "c_sr": cfg.loss.c_sr, "c_div": cfg.loss.c_div, "c_ent": cfg.loss.c_ent}
 
     train_pos = panel.date_pos(splits.train_fit)
@@ -144,7 +144,8 @@ def train_seed(cfg: Config, panel: Panel, splits: Splits, seed: int, out_dir: Pa
             )
             terms = loss_fn(
                 out.alphas[0], out.alpha_hat[0], out.logits[0], out.w[0],
-                panel.y[t].to(device=device, dtype=dtype), label_ok.to(device), int(panel.regime[t]), sharpe,
+                panel.y[t].to(device=device, dtype=dtype), label_ok.to(device),
+                int(panel.regime[t]) if model.uses_regimes else None, sharpe,
             )  # fmt: skip
             if not torch.isfinite(terms.loss):
                 nonfinite_total += 1
@@ -178,7 +179,7 @@ def train_seed(cfg: Config, panel: Panel, splits: Splits, seed: int, out_dir: Pa
             acc["w"].append(out.w[0].detach().cpu().numpy())
             acc["raw_std"].append(out.raw_std[0].cpu().numpy())
             acc["dead"].append((out.raw_std[0] < tc.dead_std).cpu().numpy())
-            acc["n_live"].append(cfg.regimes.n_agents - terms.n_dead)
+            acc["n_live"].append(model.n_agents - terms.n_dead)
 
         n_skipped = sum(skips.values())
         if n_skipped > tc.max_skip_frac * len(train_pos):
@@ -240,8 +241,8 @@ def train_seed(cfg: Config, panel: Panel, splits: Splits, seed: int, out_dir: Pa
     return summary
 
 
-def load_model(cfg: Config, panel: Panel, model_dir: Path) -> DetMASO:
-    model = DetMASO.from_config(cfg, d_in=panel.X.shape[-1]).to(dtype=getattr(torch, cfg.model.dtype))
+def load_model(cfg: Config, panel: Panel, model_dir: Path) -> torch.nn.Module:
+    model = build_model(cfg, d_in=panel.X.shape[-1]).to(dtype=getattr(torch, cfg.model.dtype))
     model.load_state_dict(torch.load(model_dir / "model.pt", weights_only=True))
     model.eval()
     return model

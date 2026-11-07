@@ -3,6 +3,10 @@
 For the validation split (development), IC and Shapley use the purged validation dates, so no
 label reaches into the test period. The test split can only be evaluated with a record returned
 by eval.lock.open_test_period (the test-period lock).
+
+Variants (config ``variant`` other than "paper") get the same report without the paper-comparison
+columns; a single-network model (model.kind single_mlp) has no agent sections (Shapley, diversity,
+scheduler). Each evaluation also saves the per-seed daily series used by eval.compare.
 """
 
 from __future__ import annotations
@@ -46,8 +50,8 @@ class SeedResult:
     port: dict
     excess: dict
     sub: dict | None
-    shapley: np.ndarray
-    v: np.ndarray
+    shapley: np.ndarray | None  # None for a single-network model
+    v: np.ndarray | None
     shapley_degenerate_days: int
     diversity_abs_corr: float
     diversity_logdet: float
@@ -56,6 +60,7 @@ class SeedResult:
     train_fig3: dict
     summary: dict
     series: dict
+    daily: pd.DataFrame  # one row per evaluated decision date (saved for eval.compare)
 
 
 def agent_rank_corr(alphas: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -123,16 +128,32 @@ def evaluate_seed(cfg: Config, panel: Panel, seed_dir: Path, ic_dates, bt_dates,
             "excess": portfolio_metrics(port[k] - bench[k], s0, s1, cfg.backtest.qlib_days),
         }
 
-    v, degenerate = coalition_values(out["alphas"][in_ic], out["logits"][in_ic], labels[in_ic], label_ok[in_ic])
-    shap = interaction_index(v, out["alphas"].shape[1])
-    abs_corr, logdet, n_live = agent_rank_corr(out["alphas"], universe)
+    n_agents = out["alphas"].shape[1]
+    if n_agents > 1:
+        v, degenerate = coalition_values(out["alphas"][in_ic], out["logits"][in_ic], labels[in_ic], label_ok[in_ic])
+        shap = interaction_index(v, n_agents)
+        abs_corr, logdet, n_live = agent_rank_corr(out["alphas"], universe)
+        div_corr, div_logdet = float(np.nanmean(abs_corr)), float(np.nanmean(logdet[np.isfinite(logdet)]))
+    else:  # a single network: no coalitions and no agent diversity
+        v, shap, degenerate = None, None, np.zeros(1, dtype=int)
+        abs_corr, n_live = np.full(len(bt_dates), np.nan), np.ones(len(bt_dates), dtype=int)
+        div_corr = div_logdet = float("nan")
     w = np.clip(out["w"], 1e-300, 1.0)
     entropy = -(w * np.log(w)).sum(axis=1)
     dead_days = (out["raw_std"] < cfg.train.dead_std).sum(axis=0).astype(int).tolist()
     history = [json.loads(line) for line in (seed_dir / "history.jsonl").read_text().splitlines()]
     summary = json.loads((seed_dir / "summary.json").read_text())
+    seed = int(seed_dir.name.removeprefix("seed"))
+    ic_full = np.full(len(bt_dates), np.nan)
+    ic_full[in_ic] = ic_series
+    daily = pd.DataFrame(
+        {
+            "seed": seed, "decision_date": bt_dates, "ret_date": ret_dates, "in_ic": in_ic, "ic": ic_full, "port": port, "bench": bench,
+            "entropy": entropy, "abs_corr": abs_corr, **{f"w{i}": out["w"][:, i] for i in range(n_agents)},
+        }
+    )  # fmt: skip
     return SeedResult(
-        seed=int(seed_dir.name.removeprefix("seed")),
+        seed=seed,
         ic=ic_summary(ic_series),
         port=port_m,
         excess=excess_m,
@@ -140,8 +161,8 @@ def evaluate_seed(cfg: Config, panel: Panel, seed_dir: Path, ic_dates, bt_dates,
         shapley=shap,
         v=v,
         shapley_degenerate_days=int(degenerate.sum()),
-        diversity_abs_corr=float(np.nanmean(abs_corr)),
-        diversity_logdet=float(np.nanmean(logdet[np.isfinite(logdet)])),
+        diversity_abs_corr=div_corr,
+        diversity_logdet=div_logdet,
         entropy=float(entropy.mean()),
         dead_days=dead_days,
         train_fig3=training_fig3(history, cfg.train.diversity_last_epochs),
@@ -160,6 +181,7 @@ def evaluate_seed(cfg: Config, panel: Panel, seed_dir: Path, ic_dates, bt_dates,
             "val_smoothed": [h["val_ic_smoothed"] for h in history],
             "best_epoch": summary["best_epoch"],
         },
+        daily=daily,
     )
 
 
@@ -232,23 +254,35 @@ def verdict(market: str, means: dict, q: dict) -> tuple[str, list[str]]:
     return "Inconclusive", failed
 
 
-def _plots(results: list[SeedResult], regime_names: list[str], index_close: pd.Series, fig_dir: Path, split: str) -> list[str]:
+def _plots(
+    results: list[SeedResult], regime_names: list[str], index_close: pd.Series, fig_dir: Path, split: str, model_label: str = "Det-MASO"
+) -> list[str]:
     fig_dir.mkdir(parents=True, exist_ok=True)
     files = []
     s0 = results[0].series
     dec, ret = s0["decision_dates"], s0["ret_dates"]
     idx_ret = index_close.reindex(dec[:1].append(ret)).pct_change().iloc[1:].fillna(0.0).to_numpy()
+    multi = results[0].shapley is not None
 
     fig, ax = plt.subplots(figsize=(10, 4.5))
     for r in results:
-        ax.plot(ret, (np.cumprod(1 + r.series["port"]) - 1) * 100, lw=1, alpha=0.8, label=f"Det-MASO seed {r.seed}")
+        ax.plot(ret, (np.cumprod(1 + r.series["port"]) - 1) * 100, lw=1, alpha=0.8, label=f"{model_label} seed {r.seed}")
     ax.plot(ret, (np.cumprod(1 + s0["bench"]) - 1) * 100, color="gray", lw=1.5, ls="--", label="Equal-weight eligible members")
     ax.plot(ret, (np.cumprod(1 + idx_ret) - 1) * 100, color="black", lw=1.2, label="CSI300 index (buy and hold)")
     ax.set_ylabel("Cumulative return (%)")
     ax.set_title(f"Top-decile long portfolio ({split})")
     ax.legend(fontsize=7, ncol=2)
     files.append(_save(fig, fig_dir / "cumulative_return.png"))
+    if multi:
+        files += _agent_plots(results, regime_names, index_close, fig_dir, split)
+    files.append(_validation_ic_plot(results, fig_dir))
+    return files
 
+
+def _agent_plots(results: list[SeedResult], regime_names: list[str], index_close: pd.Series, fig_dir: Path, split: str) -> list[str]:
+    """Scheduler weights, window attention, agent diversity and Shapley (multi-agent models only)."""
+    files = []
+    dec = results[0].series["decision_dates"]
     w = np.mean([r.series["w"] for r in results], axis=0)
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True, gridspec_kw={"height_ratios": [1, 2]})
     ax1.plot(dec, index_close.reindex(dec).to_numpy(), color="black", lw=1)
@@ -288,7 +322,10 @@ def _plots(results: list[SeedResult], regime_names: list[str], index_close: pd.S
     fig.colorbar(im)
     ax.set_title(f"Shapley interaction I(i,j), seed mean ({split})")
     files.append(_save(fig, fig_dir / "shapley.png"))
+    return files
 
+
+def _validation_ic_plot(results: list[SeedResult], fig_dir: Path) -> str:
     fig, ax = plt.subplots(figsize=(8, 3.5))
     for r in results:
         epochs = range(1, len(r.series["val_curve"]) + 1)
@@ -299,8 +336,7 @@ def _plots(results: list[SeedResult], regime_names: list[str], index_close: pd.S
     ax.set_ylabel("Validation IC")
     ax.legend(fontsize=7, ncol=3)
     ax.set_title("Early stopping signal: 3-epoch smoothed validation IC (raw IC faint)")
-    files.append(_save(fig, fig_dir / "validation_ic.png"))
-    return files
+    return _save(fig, fig_dir / "validation_ic.png")
 
 
 def _json_default(obj):
@@ -340,18 +376,26 @@ def evaluate_and_report(cfg: Config, tag: str, seeds: list[int], split: str, loc
         "mdd": _mean_std([r.port["mdd"] for r in results]),
     }
     paper = PAPER[cfg.market]
-    q = qualitative(results, panel, splits.train)
-    figs = _plots(results, regimes.names, index_close, run / f"figures_{split}", split)
+    is_paper = cfg.variant == "paper"  # the reproduction itself; variants are not compared with the paper
+    multi = results[0].shapley is not None  # several agents (Det-MASO) vs a single network
+    q = qualitative(results, panel, splits.train) if multi else None
+    model_label = "Det-MASO" if cfg.model.kind == "detmaso" else "Single network"
+    figs = _plots(results, regimes.names, index_close, run / f"figures_{split}", split, model_label)
+    daily = pd.concat([r.daily for r in results], ignore_index=True)
+    daily.to_parquet(run / f"series_{split}.parquet", index=False)
 
     def fmt(metric: str, value: float) -> str:
         return f"{value:.1%}" if metric in ("ar", "mdd") else f"{value:.3f}"
 
-    lines = [f"# Det-MASO reproduction: {cfg.market}, {split} split", ""]
+    title = f"# Det-MASO reproduction: {cfg.market}, {split} split" if is_paper else f"# Variant `{cfg.variant}`: {cfg.market}, {split} split"
+    lines = [title, ""]
     lines += [
         f"- Run group `{tag}`, seeds {seeds}, config hash `{cfg.hash()}`, data tag `{cfg.data.data_tag}`",
         f"- Evaluated dates: {bt_dates[0].date()} .. {bt_dates[-1].date()} ({len(bt_dates)} trading days; IC uses {len(ic_dates)})",
         "- Changes from the approved plan: see DEVIATIONS.md",
     ]
+    if not is_paper:
+        lines.append(f"- Not the paper configuration: model.kind `{cfg.model.kind}`; development comparison only (see eval.compare)")
     if lock_record is not None:
         lines.append(
             f"- Test-period lock: opening {lock_record['openings']} recorded in locks/{cfg.market}_test.json "
@@ -362,8 +406,12 @@ def evaluate_and_report(cfg: Config, tag: str, seeds: list[int], split: str, loc
     for metric, label in [("ic", "IC"), ("icir", "ICIR"), ("sharpe", "Sharpe"), ("ar", "Annual return"), ("mdd", "Max drawdown")]:
         m, s = means[metric]
         pv = paper.get(metric)
-        rows.append([label, f"{fmt(metric, m)} +- {fmt(metric, s)}", "-" if pv is None else fmt(metric, pv), band_status(metric, m, pv)])
-    lines.append(md_table(["Metric", "Ours", "Paper (Table 5/7)", "Band status"], rows))
+        if is_paper:
+            rows.append([label, f"{fmt(metric, m)} +- {fmt(metric, s)}", "-" if pv is None else fmt(metric, pv), band_status(metric, m, pv)])
+        else:
+            rows.append([label, f"{fmt(metric, m)} +- {fmt(metric, s)}"])
+    header = ["Metric", "Ours", "Paper (Table 5/7)", "Band status"] if is_paper else ["Metric", "Ours"]
+    lines.append(md_table(header, rows))
 
     lines += ["", "## Per seed", ""]
     lines.append(md_table(
@@ -389,7 +437,44 @@ def evaluate_and_report(cfg: Config, tag: str, seeds: list[int], split: str, loc
               f"{r.sub['excess']['ar']:.1%}", f"{r.sub['excess']['sharpe']:.2f}"] for r in results],
         ))  # fmt: skip
 
-    lines += ["", "## Diversity, scheduler and dead agents", ""]
+    if multi:
+        lines += _agent_sections(results, regimes.names, split, q)
+    else:
+        lines += ["", f"Dead days over the {split} period (network output constant across stocks; DEVIATIONS 4): "
+                  + ", ".join(f"seed {r.seed}: {r.dead_days[0]}" for r in results)]
+    if split == "test" and is_paper:
+        label, failed = verdict(cfg.market, {k: v[0] for k, v in means.items()}, q)
+        lines += ["", f"## Verdict: **{label}**", "", "Rules applied in order (docs/PLAN.md Section 10): floor, reproduced, partially reproduced, inconclusive."]
+        if failed:
+            lines += ["", "Criteria not met:", ""] + [f"- {f}" for f in failed]
+    elif split == "test":
+        lines += ["", "Variants get no reproduction verdict."]
+    else:
+        lines += ["", "Validation is for development only; the verdict is computed on the test period (Milestone 9)."]
+    lines += ["", "## Figures", ""] + [f"![{f}](figures_{split}/{f})" for f in figs]
+
+    path = run / f"report_{split}.md"
+    path.write_text("\n".join(lines) + "\n")
+    payload = {
+        "means": means,
+        "qualitative": q,
+        "lock": lock_record,
+        "per_seed": [
+            {
+                "seed": r.seed, "ic": r.ic, "port": r.port, "excess": r.excess, "sub": r.sub, "train_fig3": r.train_fig3,
+                "entropy": r.entropy, "diversity_abs_corr": r.diversity_abs_corr, "dead_days": r.dead_days,
+                "shapley": r.shapley, "v": r.v,
+            }
+            for r in results
+        ],
+    }  # fmt: skip
+    (run / f"results_{split}.json").write_text(json.dumps(payload, indent=2, default=_json_default))
+    return path
+
+
+def _agent_sections(results: list[SeedResult], names: list[str], split: str, q: dict) -> list[str]:
+    """Diversity, scheduler, dead agents, Shapley and qualitative checks (multi-agent models only)."""
+    lines = ["", "## Diversity, scheduler and dead agents", ""]
     lines.append(md_table(
         ["Quantity", "Ours (mean over seeds)", "Paper"],
         [
@@ -403,11 +488,10 @@ def evaluate_and_report(cfg: Config, tag: str, seeds: list[int], split: str, loc
         ],
     ))  # fmt: skip
     lines += ["", f"Dead agent-days over the {split} period (agent output constant across stocks; DEVIATIONS 4):", ""]
-    lines.append(md_table(["Seed", *regimes.names], [[r.seed, *r.dead_days] for r in results]))
+    lines.append(md_table(["Seed", *names], [[r.seed, *r.dead_days] for r in results]))
 
     shap = np.mean([r.shapley for r in results], axis=0)
     shap_sd = np.std([r.shapley for r in results], axis=0, ddof=1) if len(results) > 1 else np.zeros_like(shap)
-    names = regimes.names
     lines += ["", "## Shapley interaction I(i,j): mean +- std over seeds", ""]
     lines.append(md_table(
         ["", *names],
@@ -431,29 +515,4 @@ def evaluate_and_report(cfg: Config, tag: str, seeds: list[int], split: str, loc
             ["q4b ... and it is the largest pair", f"{q['q4_largest']} of {len(results)} seeds", "reported", "-"],
         ],
     ))  # fmt: skip
-    if split == "test":
-        label, failed = verdict(cfg.market, {k: v[0] for k, v in means.items()}, q)
-        lines += ["", f"## Verdict: **{label}**", "", "Rules applied in order (docs/PLAN.md Section 10): floor, reproduced, partially reproduced, inconclusive."]
-        if failed:
-            lines += ["", "Criteria not met:", ""] + [f"- {f}" for f in failed]
-    else:
-        lines += ["", "Validation is for development only; the verdict is computed on the test period (Milestone 9)."]
-    lines += ["", "## Figures", ""] + [f"![{f}](figures_{split}/{f})" for f in figs]
-
-    path = run / f"report_{split}.md"
-    path.write_text("\n".join(lines) + "\n")
-    payload = {
-        "means": means,
-        "qualitative": q,
-        "lock": lock_record,
-        "per_seed": [
-            {
-                "seed": r.seed, "ic": r.ic, "port": r.port, "excess": r.excess, "sub": r.sub, "train_fig3": r.train_fig3,
-                "entropy": r.entropy, "diversity_abs_corr": r.diversity_abs_corr, "dead_days": r.dead_days,
-                "shapley": r.shapley, "v": r.v,
-            }
-            for r in results
-        ],
-    }  # fmt: skip
-    (run / f"results_{split}.json").write_text(json.dumps(payload, indent=2, default=_json_default))
-    return path
+    return lines

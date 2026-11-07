@@ -1,0 +1,9 @@
+# Step 1 information check: the single network also sees the 12 market-state inputs the Det-MASO
+# scheduler uses (volatility, momentum and dispersion over 5/20/60/120 days, data through t-1,
+# standardized and clipped), appended to every stock's 34 features: 46 inputs, widths as in the
+# main single network.
+base: csi300_single_mlp.yaml
+variant: single_mlp_state
+
+model:
+  market_state_input: true
