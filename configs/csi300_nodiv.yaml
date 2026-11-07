@@ -1,0 +1,7 @@
+# Step 1 (TODO.md): Det-MASO with the diversity penalty switched off. Everything else is
+# configs/csi300.yaml (assumption C1 in results/csi300/single_vs_ensemble/README.md).
+base: csi300.yaml
+variant: nodiv
+
+loss:
+  c_div: 0.0

@@ -36,7 +36,8 @@ def synthetic_fields(n_days: int = 320, n_stocks: int = 8, seed: int = 0, suspen
     return out
 
 
-def synthetic_config(run_dir: Path, **overrides) -> Config:
+def synthetic_config(run_dir: Path, variant: str = "paper", **overrides) -> Config:
+    """A small config for synthetic panels; overrides are {section: {field: value}}, applied together."""
     import dataclasses
 
     from detmaso.config import LossConfig, ModelConfig, TrainConfig
@@ -53,9 +54,8 @@ def synthetic_config(run_dir: Path, **overrides) -> Config:
         loss=LossConfig(),
         train=TrainConfig(max_epochs=4, patience=8, weight_decay_mode="decoupled"),
     )  # fmt: skip
-    for section, values in overrides.items():
-        cfg = dataclasses.replace(cfg, **{section: dataclasses.replace(getattr(cfg, section), **values)})
-    return cfg
+    sections = {section: dataclasses.replace(getattr(cfg, section), **values) for section, values in overrides.items()}
+    return dataclasses.replace(cfg, variant=variant, **sections)  # validated once, as a whole
 
 
 @pytest.fixture

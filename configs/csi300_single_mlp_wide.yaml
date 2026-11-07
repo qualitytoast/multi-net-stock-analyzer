@@ -1,0 +1,7 @@
+# Step 1 capacity check: the single network with as many weights as all of Det-MASO.
+# 34 -> 180 -> 90 -> 45 -> 1 = 26,731 weights; Det-MASO = 5 agents x 4,865 + scheduler 2,309 = 26,634.
+base: csi300_single_mlp.yaml
+variant: single_mlp_wide
+
+model:
+  hidden: [180, 90, 45]

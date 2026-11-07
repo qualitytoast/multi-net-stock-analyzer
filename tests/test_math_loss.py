@@ -324,7 +324,7 @@ def test_trainer_survives_a_permanently_dead_agent(tmp_path, monkeypatch):
         torch.nn.init.zeros_(model.agents[3].net[-1].weight)
         return model
 
-    monkeypatch.setattr(trainer_mod.DetMASO, "from_config", staticmethod(dead_from_config))
+    monkeypatch.setattr(DetMASO, "from_config", staticmethod(dead_from_config))  # used by model.factory.build_model
     cfg = synthetic_config(tmp_path, train={"max_epochs": 3})
     panel, splits = synthetic_panel_and_splits()
     trainer_mod.train_seed(cfg, panel, splits, seed=0, out_dir=tmp_path / "s")
@@ -348,3 +348,44 @@ def test_trainer_skips_a_nonfinite_date_and_continues(tmp_path):
     history = [_json.loads(line) for line in (tmp_path / "s" / "history.jsonl").read_text().splitlines()]
     assert [h["skips"]["nonfinite"] for h in history] == [1, 1, 1]
     assert all(np.isfinite(h["loss"]) for h in history) and summary["nonfinite_events"] == 3
+
+
+# Step 1: one network, no regime mask -----------------------------------------------------------
+def _long_sharpe_history(n: int = 25) -> SharpeState:
+    rng = np.random.default_rng(1)
+    return _sharpe_with_history(tuple(rng.normal(0.01, 0.02, size=n)))
+
+
+def test_single_network_loss_is_the_ic_and_sharpe_terms_only():
+    torch.manual_seed(0)
+    n = 40
+    alphas = masked_zscore(torch.randn(1, n, dtype=torch.float64, requires_grad=True), torch.ones(1, n, dtype=torch.bool))
+    y = torch.randn(n, dtype=torch.float64) * 0.05
+    cfg = LossConfig(c_div=0.0, c_ent=0.0)
+    terms = DetMASOLoss(cfg, 1)(
+        alphas, alphas[0], torch.zeros(1, dtype=torch.float64), torch.ones(1, dtype=torch.float64), y,
+        torch.ones(n, dtype=torch.bool), None, _long_sharpe_history(),
+    )  # fmt: skip
+    sr, ic_term, loss = float(terms.sr.detach()), float(terms.ic_term.detach()), float(terms.loss.detach())
+    assert sr != 0.0  # the Sharpe term is active
+    assert ic_term == float(terms.ic[0])  # weight 1, no regime mask
+    assert float(terms.entropy.detach()) == 0.0 and abs(float(terms.neg_logdet.detach())) < 1e-12
+    assert loss == float((-cfg.c_ic * terms.ic_term - cfg.c_sr * terms.sr).detach())
+
+
+def test_no_regime_mask_weights_every_agent_ic_fully():
+    torch.manual_seed(0)
+    n, k = 40, 5
+    alphas = masked_zscore(torch.randn(k, n, dtype=torch.float64), torch.ones(k, n, dtype=torch.bool))
+    logits = torch.randn(k, dtype=torch.float64)
+    w = torch.softmax(logits, -1)
+    y = torch.randn(n, dtype=torch.float64)
+    args = (alphas, (w[:, None] * alphas).sum(0), logits, w, y, torch.ones(n, dtype=torch.bool))
+    loss_fn = DetMASOLoss(LossConfig(lambda_mask=0.1), k)
+    unmasked = loss_fn(*args, None, SharpeState())
+    masked = loss_fn(*args, 2, SharpeState())
+    ic = torch.as_tensor(unmasked.ic, dtype=torch.float64)
+    assert float(unmasked.ic_term) == pytest.approx(float((w * ic).sum()), abs=1e-15)
+    m = torch.full((k,), 0.1, dtype=torch.float64)
+    m[2] = 1.0
+    assert float(masked.ic_term) == pytest.approx(float((w * m * ic).sum()), abs=1e-15)

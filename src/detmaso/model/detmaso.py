@@ -8,8 +8,7 @@ import torch
 from torch import nn
 
 from detmaso.config import Config
-from detmaso.losses.stats import masked_std, masked_zscore
-from detmaso.model.agent import AgentMLP
+from detmaso.model.agent import AgentMLP, standardize_scores
 from detmaso.model.scheduler import Scheduler
 
 
@@ -24,6 +23,8 @@ class Output:
 
 
 class DetMASO(nn.Module):
+    uses_regimes = True  # the regime mask (paper Eq. 14) weights each agent's IC term
+
     def __init__(
         self,
         n_agents: int,
@@ -52,14 +53,14 @@ class DetMASO(nn.Module):
             dead_std=cfg.train.dead_std,
         )
 
+    @property
+    def n_agents(self) -> int:
+        return len(self.agents)
+
     def forward(self, X: torch.Tensor, universe: torch.Tensor, s: torch.Tensor) -> Output:
         """X: [B, N, D], universe: [B, N] bool, s: [B, 12] scheduler input."""
         raw = torch.stack([agent(X) for agent in self.agents], dim=1)  # [B, n, N]
-        mask = universe.unsqueeze(1).expand_as(raw)
-        alphas = masked_zscore(raw, mask, dim=-1)  # Eq. 2: zero mean, unit variance across assets
-        raw_std = masked_std(raw.detach(), mask, dim=-1)
-        # A constant output cannot be standardized; its score that day is 0 (DEVIATIONS.md, entry 4).
-        alphas = torch.where((raw_std < self.dead_std).unsqueeze(-1), torch.zeros_like(alphas), alphas)
+        alphas, raw_std = standardize_scores(raw, universe, self.dead_std)  # Eq. 2 (+ DEVIATIONS 4)
         logits, a = self.scheduler(s)
         w = torch.softmax(logits, dim=-1)
         alpha_hat = (w.unsqueeze(-1) * alphas).sum(dim=1)  # Eq. 9
