@@ -36,7 +36,7 @@ Last updated: 2026-11-06
 - [x] **Deviations 1-5** approved: GELU, AdamW, float64, score 0 for constant agent output, tradable-stock benchmark. `1568a39`
 - [x] **Published** to github.com/qualitytoast/multi-net-stock-analyzer with copyright notice. `f637f6c`
 - [x] **Step 1: does the 5-agent idea help?** (2026-11-06; EXPERIMENTS E4-E8; [write-up](results/csi300/single_vs_ensemble/README.md))
-  - Built: a single-network model mode (`model.kind: single_mlp`, optional `model.market_state_input`), config inheritance (`base:`), four variant configs, `detmaso compare` (validation only, paired 20-day block bootstrap over days and seeds), and a frozen paper-config fingerprint plus a golden training test; 92 tests.
+  - Built: a single-network model mode (`model.kind: single_mlp`, optional `model.market_state_input`), config inheritance (`base:`), four variant configs, `detmaso compare` (validation only, paired 20-day block bootstrap over days and seeds), and a frozen paper-config fingerprint plus a golden training test; 93 tests.
   - Paper config unchanged: retrained models identical to `final` in every weight; validation report reproduced byte for byte.
   - Result (validation): single network IC 0.103, Sharpe 0.66, MDD 16.7% vs Det-MASO 0.062, 0.02, 28.0%. Det-MASO's IC advantage -0.041 [95% range -0.088, +0.011]: no detectable difference under the rule fixed in advance; Det-MASO does not beat a single network. A Det-MASO-sized single network is the same (0.101); removing the diversity penalty changes nothing detectable but destabilizes seeds; a single network with the 12 market-mood inputs beats Det-MASO (IC 0.140) but not detectably the plain single network.
   - To re-check under walk-forward in Step 3.

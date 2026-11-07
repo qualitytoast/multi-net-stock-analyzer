@@ -71,7 +71,7 @@ the dataset is not redistributed here.
 # Python 3.12 is required (pyqlib 0.9.7 has no 3.13 wheels); uv installs it for you.
 uv sync
 ./scripts/get_cn_data.sh        # pinned community Qlib CN dataset, verified by sha256 (about 570 MB)
-uv run pytest                   # 92 tests; data-dependent ones skip until `prepare` has run
+uv run pytest                   # 93 tests; data-dependent ones skip until `prepare` has run
 ```
 
 ## Run
