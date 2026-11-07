@@ -3,6 +3,10 @@
 One Adam step per training date, in chronological order; cosine LR stepped per date; global
 gradient clipping; skip rules that fail loudly; early stopping on the 3-epoch smoothed
 validation IC (only epochs >= 3 can be "best"), restoring the best epoch's weights.
+
+Post-paper options (off by default, so the paper path is unchanged): the scheduler load-balancing
+penalty (loss.c_bal; losses.balance), and training-only runs (train.validate false) that never look at
+the validation period. Every run also saves its last epoch as model_last.pt next to model.pt.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ import torch
 from detmaso.config import Config
 from detmaso.data.panel import Panel
 from detmaso.data.splits import Splits
+from detmaso.losses.balance import BalancePenalty, effective_agents, target_shares
 from detmaso.losses.objective import DetMASOLoss, SharpeState
 from detmaso.losses.stats import daily_spearman
 from detmaso.model.factory import build_model
@@ -73,12 +78,15 @@ def validation_ic(model: torch.nn.Module, panel: Panel, positions: torch.Tensor,
 
 def _term_grad_norms(terms, coefs: dict[str, float], params: list[torch.nn.Parameter]) -> dict[str, float]:
     norms = {}
-    for name, (tensor, coef) in {
+    items = {
         "ic": (terms.ic_term, coefs["c_ic"]),
         "sharpe": (terms.sr, coefs["c_sr"]),
         "div": (terms.neg_logdet, coefs["c_div"]),
         "ent": (terms.entropy, coefs["c_ent"]),
-    }.items():
+    }
+    if terms.balance is not None:  # only when the penalty is on, so paper histories are unchanged
+        items["bal"] = (terms.balance, coefs["c_bal"])
+    for name, (tensor, coef) in items.items():
         if not tensor.requires_grad:
             norms[name] = 0.0
             continue
@@ -98,10 +106,14 @@ def train_seed(cfg: Config, panel: Panel, splits: Splits, seed: int, out_dir: Pa
     opt_cls = {"coupled": torch.optim.Adam, "decoupled": torch.optim.AdamW}[cfg.train.weight_decay_mode]
     opt = opt_cls(params, lr=cfg.train.lr_max, betas=(0.9, 0.999), eps=1e-8, weight_decay=cfg.train.weight_decay)
     loss_fn = DetMASOLoss(cfg.loss, model.n_agents)
-    coefs = {"c_ic": cfg.loss.c_ic, "c_sr": cfg.loss.c_sr, "c_div": cfg.loss.c_div, "c_ent": cfg.loss.c_ent}
+    coefs = {"c_ic": cfg.loss.c_ic, "c_sr": cfg.loss.c_sr, "c_div": cfg.loss.c_div, "c_ent": cfg.loss.c_ent, "c_bal": cfg.loss.c_bal}
 
     train_pos = panel.date_pos(splits.train_fit)
     val_pos = panel.date_pos(splits.valid_fit)
+    balance = None
+    if cfg.loss.c_bal > 0:  # usage measured over every training day; target from the training days' regimes
+        target = target_shares(cfg.loss.balance_target, panel.regime[train_pos].numpy(), model.n_agents)
+        balance = BalancePenalty(panel.s_sched[train_pos].to(device=device, dtype=dtype), target)
     t_max = len(train_pos) * cfg.train.max_epochs
     sharpe = SharpeState(window=cfg.loss.sharpe_window)
     tc = cfg.train
@@ -146,6 +158,7 @@ def train_seed(cfg: Config, panel: Panel, splits: Splits, seed: int, out_dir: Pa
                 out.alphas[0], out.alpha_hat[0], out.logits[0], out.w[0],
                 panel.y[t].to(device=device, dtype=dtype), label_ok.to(device),
                 int(panel.regime[t]) if model.uses_regimes else None, sharpe,
+                balance=None if balance is None else balance(model.scheduler),
             )  # fmt: skip
             if not torch.isfinite(terms.loss):
                 nonfinite_total += 1
@@ -161,10 +174,14 @@ def train_seed(cfg: Config, panel: Panel, splits: Splits, seed: int, out_dir: Pa
                 opt.zero_grad(set_to_none=True)
                 skip("nonfinite")
                 continue
-            torch.nn.utils.clip_grad_norm_(params, tc.clip_norm)
+            total_norm = float(torch.nn.utils.clip_grad_norm_(params, tc.clip_norm))
             opt.step()
             sharpe.push(terms.p_t)
             consecutive = 0
+            if balance is not None:  # only logged with the penalty on, so paper histories are unchanged
+                acc["balance"].append(float(terms.balance.detach()))
+                acc["clip_active"].append(float(total_norm > tc.clip_norm))
+                acc["clip_scale"].append(min(1.0, tc.clip_norm / (total_norm + 1e-6)))  # as clip_grad_norm_ scales
             acc["loss"].append(float(terms.loss.detach()))
             acc["ic_term"].append(float(terms.ic_term.detach()))
             acc["sharpe"].append(float(terms.sr.detach()))
@@ -187,15 +204,18 @@ def train_seed(cfg: Config, panel: Panel, splits: Splits, seed: int, out_dir: Pa
         if nonfinite_total > tc.max_nonfinite:
             raise TrainingAborted(f"{nonfinite_total} non-finite events")
 
-        val_ic = validation_ic(model, panel, val_pos, device)
-        val_ics.append(val_ic)
-        smoothed = float(np.mean(val_ics[-tc.smooth :])) if epoch >= tc.smooth else None
-        if smoothed is not None:
-            if smoothed > best_score:
-                best_score, best_epoch, bad = smoothed, epoch, 0
-                best_state = copy.deepcopy(model.state_dict())
-            else:
-                bad += 1
+        if tc.validate:
+            val_ic = validation_ic(model, panel, val_pos, device)
+            val_ics.append(val_ic)
+            smoothed = float(np.mean(val_ics[-tc.smooth :])) if epoch >= tc.smooth else None
+            if smoothed is not None:
+                if smoothed > best_score:
+                    best_score, best_epoch, bad = smoothed, epoch, 0
+                    best_state = copy.deepcopy(model.state_dict())
+                else:
+                    bad += 1
+        else:  # training-only run: the validation period is never evaluated; the last epoch is the model
+            val_ic, smoothed, best_epoch = None, None, epoch
         record = {
             "epoch": epoch,
             "seconds": round(time.time() - t0, 1),
@@ -212,20 +232,32 @@ def train_seed(cfg: Config, panel: Panel, splits: Splits, seed: int, out_dir: Pa
             "raw_std_median": np.median(acc["raw_std"], axis=0).tolist(),
             "grad_norms": {k: float(np.mean(v)) for k, v in grad_norms.items()},
         }
+        if balance is not None:  # end-of-epoch usage over every training day (scheduler only)
+            usage = balance.usage(model.scheduler)
+            record["usage_train"] = usage.round(6).tolist()
+            record["effective_agents_train"] = effective_agents(usage)
         with history_path.open("a") as fh:
             fh.write(json.dumps(record) + "\n")
-        log.info(
-            "seed %d epoch %d | loss %.4f ic_term %.4f sr %.3f -logdet %.3f |corr| %.3f H %.3f | val_ic %.4f smooth %s | %.0fs",
-            seed, epoch, record["loss"], record["ic_term"], record["sharpe"], record["neg_logdet"],
-            record["mean_abs_corr"], record["entropy"], val_ic,
-            "-" if smoothed is None else f"{smoothed:.4f}", record["seconds"],
-        )  # fmt: skip
+        if tc.validate:
+            log.info(
+                "seed %d epoch %d | loss %.4f ic_term %.4f sr %.3f -logdet %.3f |corr| %.3f H %.3f | val_ic %.4f smooth %s | %.0fs",
+                seed, epoch, record["loss"], record["ic_term"], record["sharpe"], record["neg_logdet"],
+                record["mean_abs_corr"], record["entropy"], val_ic,
+                "-" if smoothed is None else f"{smoothed:.4f}", record["seconds"],
+            )  # fmt: skip
+        else:
+            log.info(
+                "seed %d epoch %d | loss %.4f ic_term %.4f H %.3f | usage %s | training only | %.0fs",
+                seed, epoch, record["loss"], record["ic_term"], record["entropy"], record.get("usage_train"), record["seconds"],
+            )  # fmt: skip
         if bad >= tc.patience:
             break
 
-    if best_state is None:
+    if tc.validate and best_state is None:
         raise TrainingAborted("training ended before any epoch could be selected")
-    model.load_state_dict(best_state)
+    torch.save(model.state_dict(), out_dir / "model_last.pt")  # the last epoch trained, whatever was restored
+    if tc.validate:
+        model.load_state_dict(best_state)
     torch.save(model.state_dict(), out_dir / "model.pt")
     summary = {
         "seed": seed,
@@ -237,12 +269,15 @@ def train_seed(cfg: Config, panel: Panel, splits: Splits, seed: int, out_dir: Pa
         "nonfinite_events": nonfinite_total,
         "device": str(device),
     }
+    if not tc.validate:
+        summary.update(best_val_ic_smoothed=None, validated=False)
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     return summary
 
 
-def load_model(cfg: Config, panel: Panel, model_dir: Path) -> torch.nn.Module:
+def load_model(cfg: Config, panel: Panel, model_dir: Path, file: str = "model.pt") -> torch.nn.Module:
+    """A trained model: ``model.pt`` (restored best epoch) or ``model_last.pt`` (last epoch trained)."""
     model = build_model(cfg, d_in=panel.X.shape[-1]).to(dtype=getattr(torch, cfg.model.dtype))
-    model.load_state_dict(torch.load(model_dir / "model.pt", weights_only=True))
+    model.load_state_dict(torch.load(model_dir / file, weights_only=True))
     model.eval()
     return model

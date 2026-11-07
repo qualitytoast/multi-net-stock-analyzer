@@ -213,4 +213,8 @@ def load_prepared(cfg: Config) -> tuple[Panel, RegimeModel, Splits]:
     panel = Panel.load(d / "panel.pt")
     regimes = RegimeModel.from_json(d / "regimes.json")
     splits = make_splits(panel.dates, cfg.splits.train, cfg.splits.valid, cfg.splits.test, cfg.splits.purge_days)
+    if cfg.is_placebo:  # applied here so that train, evaluate, usage and compare all see the same answers
+        from detmaso.data.placebo import shuffle_answers
+
+        panel = shuffle_answers(panel, cfg.placebo.block_days, cfg.placebo.shuffle_seed)
     return panel, regimes, splits

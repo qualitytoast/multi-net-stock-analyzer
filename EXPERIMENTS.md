@@ -4,6 +4,12 @@ Every training or evaluation run is logged here: date, config, data used, result
 change was kept or dropped. Comparisons use the training and validation periods only; the test period
 (2024-03-01 to 2026-03-01) is locked and was opened once, for E3 (see `locks/csi300_test.json`).
 
+Every configuration trained with validation switched on is also a counted try in the git-tracked try ledger
+[results/csi300/trials.csv](results/csi300/trials.csv) (CLAUDE.md, "Guards"): `detmaso train` registers it before
+training starts, so aborted runs count too. "Try #" below is its number there; identical reruns, placebo runs
+and training-only pilots are not new tries. Decision rules are fixed in [docs/RULES.md](docs/RULES.md) before a
+change's first run.
+
 Common to every entry unless stated otherwise:
 
 - **Data:** CSI300, community Qlib dataset tag `2026-11-04` (sha256 `dc917293...`), data hash `8e81084fb70adad6`.
@@ -13,16 +19,25 @@ Common to every entry unless stated otherwise:
 
 ## Index
 
-| ID | Date | What | Config (hash) | Run group | Validation IC | Kept / dropped |
-|---|---|---|---|---|---|---|
-| E1 | 2026-11-05 | Stability diagnostics behind DEVIATIONS 1-4 | paper config with ReLU/GELU x coupled/decoupled decay, float32/float64 | `runs/diag/*` (partly not saved) | not compared | GELU + decoupled decay + float64 + "constant output scores 0" kept |
-| E2 | 2026-11-05 | First 5-seed training of the paper config | `configs/csi300.yaml` (`d2a65e9a6a237d2c`) | `dev` | 0.062 +- 0.010 | superseded by E3 (identical models) |
-| E3 | 2026-11-05 | Final paper-config models (MVP result) | `configs/csi300.yaml` (`d2a65e9a6a237d2c`) | `final` | 0.062 +- 0.010 | kept: the reference Det-MASO |
-| E4 | 2026-11-06 | Step 1: retrain the paper config with the Step 1 code (regression check) | `configs/csi300.yaml` (`d2a65e9a6a237d2c`) | `paper_rerun` | identical to E3 | check passed; not a candidate |
-| E5 | 2026-11-06 | Step 1: Det-MASO without the diversity penalty (c_div = 0) | `configs/csi300_nodiv.yaml` (`95dc0657f33ab915`) | `nodiv` | 0.088 +- 0.058 | dropped: no detectable gain, unstable across seeds |
-| E6 | 2026-11-06 | Step 1: single network, one-agent size (main baseline) | `configs/csi300_single_mlp.yaml` (`ef0560a807c0b155`) | `single_mlp` | 0.103 +- 0.002 | kept as the reference baseline |
-| E7 | 2026-11-06 | Step 1: single network, Det-MASO size (capacity check) | `configs/csi300_single_mlp_wide.yaml` (`6964fbf8c1ad4259`) | `single_mlp_wide` | 0.101 +- 0.007 | dropped: same as E6 |
-| E8 | 2026-11-06 | Step 1: single network + 12 market-mood inputs | `configs/csi300_single_mlp_state.yaml` (`d38afb377e8a652b`) | `single_mlp_state` | 0.140 +- 0.014 | kept as a baseline to re-check under walk-forward (Step 3) |
+| ID | Date | Try # | What | Config (hash) | Run group | Validation IC | Kept / dropped |
+|---|---|---|---|---|---|---|---|
+| E1 | 2026-11-05 | 1-5 | Stability diagnostics behind DEVIATIONS 1-4 | paper config with ReLU/GELU x coupled/decoupled decay, float32/float64 | `runs/diag/*` (partly not saved) | not compared | GELU + decoupled decay + float64 + "constant output scores 0" kept |
+| E2 | 2026-11-05 | 6 | First 5-seed training of the paper config | `configs/csi300.yaml` (`d2a65e9a6a237d2c`) | `dev` | 0.062 +- 0.010 | superseded by E3 (identical models) |
+| E3 | 2026-11-05 | 6 | Final paper-config models (MVP result) | `configs/csi300.yaml` (`d2a65e9a6a237d2c`) | `final` | 0.062 +- 0.010 | kept: the reference Det-MASO |
+| E4 | 2026-11-06 | 6 (rerun) | Step 1: retrain the paper config with the Step 1 code (regression check) | `configs/csi300.yaml` (`d2a65e9a6a237d2c`) | `paper_rerun` | identical to E3 | check passed; not a candidate |
+| E5 | 2026-11-06 | 7 | Step 1: Det-MASO without the diversity penalty (c_div = 0) | `configs/csi300_nodiv.yaml` (`95dc0657f33ab915`) | `nodiv` | 0.088 +- 0.058 | dropped: no detectable gain, unstable across seeds |
+| E6 | 2026-11-06 | 8 | Step 1: single network, one-agent size (main baseline) | `configs/csi300_single_mlp.yaml` (`ef0560a807c0b155`) | `single_mlp` | 0.103 +- 0.002 | kept as the reference baseline |
+| E7 | 2026-11-06 | 9 | Step 1: single network, Det-MASO size (capacity check) | `configs/csi300_single_mlp_wide.yaml` (`6964fbf8c1ad4259`) | `single_mlp_wide` | 0.101 +- 0.007 | dropped: same as E6 |
+| E8 | 2026-11-06 | 10 | Step 1: single network + 12 market-mood inputs | `configs/csi300_single_mlp_state.yaml` (`d38afb377e8a652b`) | `single_mlp_state` | 0.140 +- 0.014 | kept as a baseline to re-check under walk-forward (Step 3) |
+| E9 | 2026-11-07 | 6 (rerun) | Scheduler balance: retrain the paper config with the new code (regression check) | `configs/csi300.yaml` (`d2a65e9a6a237d2c`) | `paper_rerun2` | identical to E3 | check passed; not a candidate |
+| E10 | 2026-11-07 | - (placebo) | Scheduler balance: the whole procedure on shuffled answers (Rule P) | `configs/scheduler_balance/placebo/` | `placebo_*` (pilot + 8 groups) | average +0.005 [-0.006, +0.016] | check passed |
+| E11 | 2026-11-07 | - (training only) | Scheduler balance: strength pilot, validation off (Rule G) | `configs/scheduler_balance/pilot/` | `bal_pilot_*` | not evaluated | set the grid 0.03-10 |
+| E12 | 2026-11-07 | 11 | Scheduler balance, strength 0.03 | `configs/scheduler_balance/bal_c3e-2.yaml` (`5e6205840602a67a`) | `bal_c3e-2` | 0.038 +- 0.020 | dropped (Rule S: no reliable specialists; rule kept by the owner); usage and routing fail |
+| E13 | 2026-11-07 | 13 | Scheduler balance, strength 0.1 | `configs/scheduler_balance/bal_c1e-1.yaml` (`36f4924f33ff1153`) | `bal_c1e-1` | 0.072 +- 0.015 | dropped (Rule S: no reliable specialists; rule kept by the owner); usage ok, routing fails |
+| E14 | 2026-11-07 | 16 | Scheduler balance, strength 0.3 | `configs/scheduler_balance/bal_c3e-1.yaml` (`7cec9a9df1982f8d`) | `bal_c3e-1` | 0.058 +- 0.029 | dropped (Rule S: no reliable specialists; rule kept by the owner); usage ok, routing fails |
+| E15 | 2026-11-07 | 12 | Scheduler balance, strength 1 | `configs/scheduler_balance/bal_c1e0.yaml` (`6cf6709dc4c7b083`) | `bal_c1e0` | 0.055 +- 0.016 | dropped (Rule S: no reliable specialists; rule kept by the owner); usage ok, routing fails |
+| E16 | 2026-11-07 | 14 | Scheduler balance, strength 3 | `configs/scheduler_balance/bal_c3e0.yaml` (`2be8c2d2b3b14e8d`) | `bal_c3e0` | 0.054 +- 0.021 | dropped (Rule S: no reliable specialists; rule kept by the owner); usage ok, routing fails |
+| E17 | 2026-11-07 | 15 | Scheduler balance, strength 10 | `configs/scheduler_balance/bal_c1e1.yaml` (`521e530361af914f`) | `bal_c1e1` | 0.036 +- 0.033 | dropped (Rule S: no reliable specialists; rule kept by the owner); usage ok, routing fails |
 
 ## E1: stability diagnostics (2026-11-05)
 
@@ -85,3 +100,71 @@ the model; the range is the 95% bootstrap range.
 - **Config:** `configs/csi300_single_mlp_state.yaml` (`d38afb377e8a652b`): E6 with `model.market_state_input: true` (46 inputs); 5,633 weights.
 - **Results (validation):** IC 0.140 +- 0.014, ICIR 0.73 +- 0.09, Sharpe 0.69 +- 0.26, AR 10.6% +- 4.7%, MDD 20.6% +- 3.3%. Advantage on IC -0.078 [-0.144, -0.017]: the single network is better under the fixed rule; Sharpe -0.67 [-2.22, +0.86]: no detectable difference. Against E6: IC +0.038 [-0.025, +0.101], Sharpe +0.02 [-1.12, +1.34], no detectable difference. Validation IC averaged over all epochs 0.099 (picking the epoch adds +0.042, the most of any single network).
 - **Kept / dropped:** kept as a baseline to re-check under walk-forward (Step 3); its extra edge over E6 is not established.
+
+## Scheduler collapse fix (2026-11-07, E9-E17)
+
+Plan `give-me-a-plan-abundant-beacon.md` (approved 2026-11-07); rules in [docs/RULES.md](docs/RULES.md), fixed before
+the first run; write-up, tables and figures: [results/csi300/scheduler_balance/README.md](results/csi300/scheduler_balance/README.md).
+The change: `loss.c_bal x KL(target || usage)`, usage = the scheduler's mean weight per agent over all 2,653 training
+days, target = each mood's share of the training days (52.6, 7.9, 32.2, 5.1, 2.2%). Everything else is the paper
+config (E3); 5 seeds. "Usage" (Rule M1) = every agent gets at least half its target share of the training days;
+"routing" (M2) = each mood's own agent has the largest weight on that mood's days; both in every seed, for the
+restored and the last-epoch model.
+
+### E9: `paper_rerun2`, regression check
+
+- **Config:** `configs/csi300.yaml` (`d2a65e9a6a237d2c`), unchanged; trained with the scheduler-balance code.
+- **Result:** all 5 models identical to `final` (E3) in every weight, validation-IC curve, epoch count and best epoch;
+  every model file's sha256 equals `locks/csi300_test.json`. Re-evaluating `final` reproduced its validation report,
+  results file and daily series byte for byte.
+- **Kept / dropped:** check passed.
+
+### E10: placebo of the whole procedure (Rule P; not tries)
+
+- **Data:** answers shuffled within 20-day blocks: the stocks labelled on every day of a block (93.0% of training
+  stock-days, 99.2% of validation; at least 67 stocks per training day) get another such stock's 20-day labels and
+  next-day returns (one random cycle per block, so nobody keeps its own); the other stocks are left out of training,
+  IC and the portfolio for that block. Placebo seed 0.
+- **Pilot** (6 strengths x 2 seeds x 8 epochs, validation off): every agent at least half its target at epoch 8 in
+  both seeds at 1e-5, 1e-4, 1e-2, 0.1 and 1 (not 1e-3); placebo grid 3e-6, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3.
+- **Sweep:** `placebo_paper`, `placebo_single_mlp` and the 6 placebo-grid strengths, 5 seeds each (configs
+  `configs/scheduler_balance/placebo/`). Validation IC per group: 0.0055, 0.0096, 0.0038, 0.0102, -0.0007, -0.0008,
+  0.0050, 0.0056; average **+0.0048 [-0.0056, +0.0157]** (P1 passes). No placebo strength passed Rule M (without a
+  signal the scheduler drifts, and these weak penalties do not hold every seed at the target), so none was chosen
+  (P2 does not apply).
+- **Excess Sharpe** was positive in all 8 groups (0.13-0.99), but their daily excess returns correlate 0.43 on
+  average (shared tilt, same shuffled returns): one draw, t = 1.7 by the daily formula, which overstates certainty.
+- **Kept / dropped:** check passed: the process finds nothing on shuffled answers. Results:
+  [results/csi300/scheduler_balance/placebo/](results/csi300/scheduler_balance/placebo/).
+
+### E11: strength pilot (Rule G; training only, not tries)
+
+- **Config:** `configs/scheduler_balance/pilot/pilot_c*.yaml`: strengths 1e-5 to 1, seeds 0-1, 8 epochs,
+  `train.validate: false` (the validation period is never evaluated).
+- **Result:** every agent at least half its target at epoch 8 in both seeds only at 0.1 and 1; anchor 0.1, so the
+  grid is 0.03, 0.1, 0.3, 1, 3, 10. Gradient clipping was active on 1-3% of steps at every strength.
+- **Kept / dropped:** set the grid (logged in docs/RULES.md before the sweep).
+
+### E12-E17: the strength sweep (tries 11-16)
+
+| ID | Strength | Try # | IC | Sharpe | Det-MASO's IC lead [95%] | Usage (M1) | Routing (M2) | Routing failures (of 50) |
+|---|---|---|---|---|---|---|---|---|
+| E12 | 0.03 | 11 | 0.038 +- 0.020 | -0.32 +- 0.48 | +0.024 [-0.011, +0.058] | fail | fail | 11 (Tail-Risk 7) |
+| E13 | 0.1 | 13 | 0.072 +- 0.015 | -0.21 +- 0.32 | -0.010 [-0.038, +0.015] | pass | fail | 11 (Tail-Risk 6) |
+| E14 | 0.3 | 16 | 0.058 +- 0.029 | -0.31 +- 0.43 | +0.004 [-0.031, +0.041] | pass | fail | 6 (all Tail-Risk) |
+| E15 | 1 | 12 | 0.055 +- 0.016 | -0.17 +- 0.27 | +0.007 [-0.024, +0.040] | pass | fail | 4 (Tail-Risk 2) |
+| E16 | 3 | 14 | 0.054 +- 0.021 | -0.31 +- 0.31 | +0.008 [-0.024, +0.040] | pass | fail | 6 (Tail-Risk 4) |
+| E17 | 10 | 15 | 0.036 +- 0.033 | -0.30 +- 0.33 | +0.026 [-0.012, +0.074] | pass | fail | 1 (Tail-Risk) |
+
+- **Data:** as in E3. **Configs:** `configs/scheduler_balance/bal_c*.yaml` (hashes in the index).
+- **Rule S:** usage is fixed from 0.1 up, but routing fails at every strength (mostly on Tail-Risk, 59 training
+  days, all in 2015), so the outcome is **"all agents used, but no specialists"** and the process stopped for the
+  owner's decision; the owner kept the rules as written. Rule K was not applied (no c*).
+- **Results (validation):** no strength differs detectably from the paper Det-MASO (every IC range above spans 0;
+  Sharpe likewise); all stay below the single network (E6, 0.103). Deflated Sharpe 5-8%, deflated IC 19-72% (16 tries).
+  Picking the epoch on validation added +0.005 to +0.034 IC.
+- **Scheduler:** effective agents over time on the training days 2.96-3.13 (paper 1.99, target 3.13); own agent's
+  weight on its mood's days at strength 10: 93, 86, 87, 92, 79% (paper 77, 19, 83, 20, 0%). Strengths 3 and 10 each
+  had one seed whose rare-mood agent was dead (constant output) for long stretches of training.
+- **Kept / dropped:** **dropped**. At the Rule S stop the owner kept the rules as written (2026-11-07), so none of
+  the six strengths is carried forward; the penalty stays in the code behind `loss.c_bal`, off by default.

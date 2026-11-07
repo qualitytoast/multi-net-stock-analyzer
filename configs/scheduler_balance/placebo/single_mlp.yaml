@@ -1,0 +1,6 @@
+# Placebo (docs/RULES.md, Rule P): the single network (Step 1 baseline) on shuffled answers.
+base: ../../csi300_single_mlp.yaml
+variant: placebo_single_mlp
+
+placebo:
+  shuffle_seed: 0

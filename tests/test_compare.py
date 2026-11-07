@@ -178,3 +178,43 @@ def test_run_compare_end_to_end_on_synthetic_runs(tmp_path):
     assert payload["advantage"]["single_test"]["ic"]["verdict"] in (REFERENCE_BETTER, VARIANT_BETTER, NO_DIFFERENCE)
     assert [r["weights"] for r in payload["runs"]][1] < [r["weights"] for r in payload["runs"]][0]
     assert sorted(p.name for p in (out / "figures").iterdir()) == ["advantage.png", "cumulative_return.png", "metrics.png"]
+
+
+def test_scheduler_balance_rules_end_to_end_on_synthetic_runs(tmp_path):
+    """Train a reference and two penalty strengths, save their evaluation and training-day usage, then
+    apply docs/RULES.md Rules M, S and K with `compare --rule scheduler_balance`."""
+    from detmaso.eval.report import _json_default, evaluate_seed
+    from detmaso.eval.scheduler_diag import write_usage
+    from detmaso.train.trainer import train_seed
+    from tests.test_end_to_end import synthetic_panel_and_splits
+
+    panel, splits = synthetic_panel_and_splits()
+    runs = tmp_path / "runs"
+    common = {"train": {"max_epochs": 3, "seeds": (0, 1)}, "model": {"dtype": "float64"}}
+    ref = synthetic_config(runs, **common)
+    strengths = [synthetic_config(runs, variant=f"bal_{c}", loss={"c_bal": c, "balance_target": "regime"}, **common) for c in (0.1, 1.0)]
+    for cfg, tag in [(ref, "ref"), (strengths[0], "b1"), (strengths[1], "b2")]:
+        group = runs / tag
+        group.mkdir(parents=True)
+        (group / "config.json").write_text(json.dumps({"hash": cfg.hash(), **cfg.to_dict()}, default=str))
+        results = []
+        for seed in (0, 1):
+            train_seed(cfg, panel, splits, seed, group / f"seed{seed}")
+            results.append(evaluate_seed(cfg, panel, group / f"seed{seed}", splits.valid_fit, splits.valid, panel.dates, None))
+        pd.concat([r.daily for r in results], ignore_index=True).to_parquet(group / "series_valid.parquet", index=False)
+        per_seed = [{"seed": r.seed, "ic": r.ic, "port": r.port, "excess": r.excess, "dead_days": r.dead_days} for r in results]
+        (group / "results_valid.json").write_text(json.dumps({"per_seed": per_seed}, default=_json_default))
+        write_usage(cfg, tag, panel, splits)
+
+    out = tmp_path / "cmp"
+    runs_spec = [(ref, "paper.yaml", "ref"), (strengths[0], "b1.yaml", "b1"), (strengths[1], "b2.yaml", "b2")]
+    text = run_compare(runs_spec, reference="ref", out_dir=out, n_boot=300, rule="scheduler_balance").read_text()
+    payload = json.loads((out / "comparison.json").read_text())
+    rules = payload["rules"]
+    assert "## Rules (docs/RULES.md, scheduler balance)" in text and "## Training days" in text
+    assert rules["strengths"] == [0.1, 1.0] and set(rules["rule_m"]) == {"bal_0.1", "bal_1.0"}
+    assert rules["target"] == pytest.approx([0.5, 0.0, 0.5, 0.0, 0.0], abs=0.02)  # synthetic regimes: agents 0 and 2
+    assert rules["outcome"] in ("kept for re-check", "dropped", "not fixed at any tested strength", "all agents used, but no specialists")
+    assert "rule_p" not in rules  # real (not placebo) runs
+    figs = sorted(p.name for p in (out / "figures").iterdir())
+    assert {"strength_sweep.png", "usage_vs_target.png", "routing.png"} <= set(figs)

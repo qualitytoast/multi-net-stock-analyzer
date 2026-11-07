@@ -87,6 +87,7 @@ class LossTerms:
     affine_share: float  # share of agents whose soft rank was exactly affine today
     cholesky_retries: int
     n_dead: int  # agents with a constant (zeroed) score today
+    balance: torch.Tensor | None = None  # load-balancing penalty KL(target || usage), when switched on
 
 
 class DetMASOLoss:
@@ -104,6 +105,7 @@ class DetMASOLoss:
         label_ok: torch.Tensor,  # [N] bool
         regime: int | None,  # agent index of today's regime; None = no regime mask (single network)
         sharpe: SharpeState,
+        balance: torch.Tensor | None = None,  # KL(target || usage) over the training days (losses.balance)
     ) -> LossTerms:
         c = self.cfg
         idx = torch.nonzero(label_ok, as_tuple=False).squeeze(-1)
@@ -138,6 +140,8 @@ class DetMASOLoss:
             mask[regime] = 1.0
         ic_term = (w.double() * mask * ic).sum()
         loss = -c.c_ic * ic_term - c.c_sr * sr + c.c_div * nld - c.c_ent * entropy
+        if balance is not None:  # post-paper term; without it the paper's loss expression is untouched
+            loss = loss + c.c_bal * balance
 
         with torch.no_grad():
             live = A.abs().sum(dim=1) > 0  # agents with a non-constant score today
@@ -161,4 +165,5 @@ class DetMASOLoss:
             affine_share=float(affine),
             cholesky_retries=retries,
             n_dead=self.n_agents - k,
+            balance=balance,
         )

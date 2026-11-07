@@ -1,0 +1,14 @@
+# Training-only pilot that places the load-balancing strength grid (docs/RULES.md, Rule G).
+# Validation is switched off (the validation period is never evaluated), 8 epochs, seeds 0 and 1.
+# Everything else is the paper config (configs/csi300.yaml) plus the penalty.
+base: ../../csi300.yaml
+variant: bal_pilot_c1e-1
+
+loss:
+  c_bal: 0.1
+  balance_target: regime
+
+train:
+  validate: false
+  max_epochs: 8
+  seeds: [0, 1]

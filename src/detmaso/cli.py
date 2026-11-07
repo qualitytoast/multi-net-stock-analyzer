@@ -1,14 +1,19 @@
-"""Command line entry point: prepare | train | evaluate | compare.
+"""Command line entry point: prepare | train | evaluate | usage | compare.
 
   detmaso prepare  --config configs/csi300.yaml
   detmaso train    --config configs/csi300.yaml --tag final            (all configured seeds)
   detmaso evaluate --config configs/csi300.yaml --tag final --split valid
   detmaso evaluate --config configs/csi300.yaml --tag final --split test --unlock-test
+  detmaso usage    --runs configs/csi300.yaml:final [--grid] [--out DIR]   (training days only)
   detmaso compare  --runs configs/csi300.yaml:final configs/csi300_single_mlp.yaml:single_mlp \
                    --reference final --out results/csi300/single_vs_ensemble    (validation only)
 
 A run group (runs/<market>/<tag>/) belongs to one configuration: training refuses to add to a group
 trained with a different config hash, and evaluation refuses a config that does not match the group.
+
+Guards (CLAUDE.md): `train` registers every configuration in the try ledger results/<market>/trials.csv
+before training (aborted runs included), `evaluate --split valid` adds its validation metrics, and
+`compare` reports each variant's try number, deflated Sharpe and deflated IC from that ledger.
 
 The test period is locked (plan: "opened once, in Milestone 9, with a frozen config"). Evaluating
 it needs --unlock-test and an explicit --tag, uses all configured seeds, and is recorded in the
@@ -53,8 +58,18 @@ def cmd_prepare(cfg: Config, args) -> None:
     log.info("prepared data saved; report at %s", path)
 
 
+def _write_group_config(cfg: Config, tag: str) -> None:
+    """Write the run group's config.json atomically (seeds of one group may train in parallel)."""
+    path = cfg.run_path / tag / "config.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".config.json.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps({"hash": cfg.hash(), **cfg.to_dict()}, indent=2, default=str))
+    os.replace(tmp, path)
+
+
 def cmd_train(cfg: Config, args) -> None:
     from detmaso.data.panel import load_prepared
+    from detmaso.eval import ledger
     from detmaso.eval.lock import lock_path
     from detmaso.train.trainer import train_seed
 
@@ -64,12 +79,19 @@ def cmd_train(cfg: Config, args) -> None:
     existing = _group_hash(cfg, args.tag)
     if existing is not None and existing != cfg.hash():
         raise SystemExit(f"run group '{args.tag}' was trained with config {existing}, this config is {cfg.hash()}; use a new --tag")
+    trials = ledger.ledger_path(cfg.market)
+    row = ledger.register(trials, cfg, args.config, args.tag, args.seeds)  # counted before training starts
+    log.info("try ledger %s: config %s, kind %s, try %s", trials, cfg.hash(), row["kind"], row["try_no"] or "- (not counted)")
     panel, _, splits = load_prepared(cfg)
     for seed in args.seeds:
         out = _seed_dir(cfg, args.tag, seed)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        (out.parent / "config.json").write_text(json.dumps({"hash": cfg.hash(), **cfg.to_dict()}, indent=2, default=str))
-        summary = train_seed(cfg, panel, splits, seed, out)
+        _write_group_config(cfg, args.tag)
+        try:
+            summary = train_seed(cfg, panel, splits, seed, out)
+        except BaseException as exc:
+            ledger.set_seed_status(trials, cfg, args.tag, seed, f"aborted: {type(exc).__name__}")
+            raise
+        ledger.set_seed_status(trials, cfg, args.tag, seed, "trained")
         log.info("seed %d done: %s", seed, summary)
 
 
@@ -79,6 +101,8 @@ def cmd_evaluate(cfg: Config, args) -> None:
     trained = _group_hash(cfg, args.tag)
     if trained != cfg.hash():
         raise SystemExit(f"run group '{args.tag}' was trained with config {trained}, this config is {cfg.hash()}; pass the matching --config")
+    if not cfg.train.validate:
+        raise SystemExit(f"run group '{args.tag}' is a training-only run (train.validate false): it must never be evaluated")
     lock_record = None
     if args.split == "test":
         from detmaso.eval.lock import TestLockError, open_test_period
@@ -93,30 +117,103 @@ def cmd_evaluate(cfg: Config, args) -> None:
             raise SystemExit(f"test period refused: {exc}") from exc
     path = evaluate_and_report(cfg, args.tag, args.seeds, args.split, lock_record=lock_record)
     log.info("report written to %s", path)
+    if args.split == "valid":
+        from detmaso.eval import ledger
+
+        trials = ledger.ledger_path(cfg.market)
+        if ledger.try_number(trials, cfg.hash()) is None and not ledger.read(trials)["config_hash"].eq(cfg.hash()).any():
+            ledger.register(trials, cfg, args.config, args.tag, [], note="registered at evaluation (trained before the ledger existed)")
+        ledger.record_metrics(trials, cfg, ledger.validation_metrics(cfg.run_path / args.tag))
+        log.info("validation metrics recorded in the try ledger %s", trials)
 
 
-def cmd_compare(args) -> None:
-    from detmaso.eval.compare import run_compare
-
-    if args.split != "valid":
-        raise SystemExit("comparisons use the validation period only; the test period is never used to compare variants")
+def _parse_runs(specs: list[str]) -> list[tuple[Config, str, str]]:
     runs = []
-    for spec in args.runs:
+    for spec in specs:
         config_path, sep, tag = spec.rpartition(":")
         if not sep or not config_path or not tag:
             raise SystemExit(f"--runs entries are CONFIG:TAG, got {spec!r}")
         runs.append((load_config(config_path), config_path, tag))
-    path = run_compare(runs, reference=args.reference, out_dir=Path(args.out))
+    return runs
+
+
+def cmd_usage(args) -> None:
+    """Training-day scheduler usage (never the validation period); with --grid, Rule G over pilot runs."""
+    from detmaso.eval.guard import PILOT_STRENGTHS, rule_g
+    from detmaso.eval.scheduler_diag import summarize, write_usage
+
+    runs = _parse_runs(args.runs)
+    summaries = []
+    for cfg, config_path, tag in runs:
+        path = write_usage(cfg, tag)
+        kind = cfg.loss.balance_target if cfg.loss.c_bal > 0 else "regime"
+        s = summarize(cfg, tag, kind)
+        s["config"] = config_path
+        summaries.append(s)
+        m = s["rule_m"]
+        log.info("%s (c_bal %g): M0 %s M1 %s M2 %s -> Rule M %s; usage file %s", tag, cfg.loss.c_bal, m["m0"], m["m1"], m["m2"], m["pass"], path)
+    payload = {"runs": summaries}
+    if args.grid:
+        pilot_m1 = {}
+        for s in summaries:  # Rule G reads the last epoch (epoch 8 of the pilot) in every pilot seed
+            pilot_m1[s["c_bal"]] = bool(s["rule_m"]["m0"] and all(c["last"]["m1"] for c in s["seeds"].values()))
+        if sorted(pilot_m1) != sorted(PILOT_STRENGTHS):
+            raise SystemExit(f"Rule G needs the pilot strengths {PILOT_STRENGTHS}, got {sorted(pilot_m1)}")
+        placebo = all(cfg.is_placebo for cfg, _, _ in runs)
+        payload["rule_g"] = {"placebo": placebo, "pilot_m1": {f"{c:g}": ok for c, ok in sorted(pilot_m1.items())}, **rule_g(pilot_m1, placebo)}
+        log.info("Rule G: %s", payload["rule_g"])
+    if args.out:
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "usage.json").write_text(json.dumps(payload, indent=2, default=float))
+        (out / "usage.md").write_text(_usage_markdown(payload))
+        log.info("usage summary written to %s", out)
+
+
+def _usage_markdown(payload: dict) -> str:
+    from detmaso.mdtable import md_table
+
+    lines = ["# Training-day scheduler usage (docs/RULES.md, Rules G and M)", ""]
+    first = payload["runs"][0]
+    lines += [f"Target ({first['target_kind']} shares of the {sum(first['mood_days'])} training days), %: "
+              + ", ".join(f"{100 * t:.1f}" for t in first["target"]), ""]  # fmt: skip
+    rows = []
+    for s in payload["runs"]:
+        for seed, c in sorted(s["seeds"].items()):
+            for ck in ("best", "last"):
+                if ck in c:
+                    rows.append([f"`{s['tag']}`", f"{s['c_bal']:g}", seed, ck, ", ".join(f"{100 * u:.2f}" for u in c[ck]["usage"]),
+                                 f"{c[ck]['effective_agents']:.2f}", "yes" if c[ck]["m1"] else "no", "yes" if c[ck]["m2"] else "no"])  # fmt: skip
+    lines.append(md_table(["Run group", "c_bal", "Seed", "Model", "Usage per agent, %", "Effective agents", "M1", "M2"], rows))
+    if "rule_g" in payload:
+        g = payload["rule_g"]
+        lines += ["", "## Rule G", "", f"- M1 at the last pilot epoch, both seeds: {g['pilot_m1']}"]
+        lines += [f"- Anchor g0: {g['anchor']}", f"- Grid: {g['grid']}", f"- Stop: {g['stop']}"]
+    return "\n".join(lines) + "\n"
+
+
+def cmd_compare(args) -> None:
+    from detmaso.eval import ledger
+    from detmaso.eval.compare import run_compare
+
+    if args.split != "valid":
+        raise SystemExit("comparisons use the validation period only; the test period is never used to compare variants")
+    runs = _parse_runs(args.runs)
+    trials = Path(args.ledger) if args.ledger else ledger.ledger_path(runs[0][0].market)
+    path = run_compare(runs, reference=args.reference, out_dir=Path(args.out), rule=args.rule, ledger_path=trials)
     log.info("comparison written to %s", path)
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="detmaso")
-    parser.add_argument("command", choices=["prepare", "train", "evaluate", "compare"])
+    parser.add_argument("command", choices=["prepare", "train", "evaluate", "usage", "compare"])
     parser.add_argument("--config", help="required for prepare, train and evaluate")
-    parser.add_argument("--runs", nargs="+", metavar="CONFIG:TAG", help="compare: the run groups to compare")
+    parser.add_argument("--runs", nargs="+", metavar="CONFIG:TAG", help="compare / usage: the run groups")
     parser.add_argument("--reference", help="compare: tag of the reference run group (default: the first)")
-    parser.add_argument("--out", help="compare: output directory")
+    parser.add_argument("--out", help="compare (required) / usage (optional): output directory")
+    parser.add_argument("--rule", choices=["scheduler_balance"], default=None, help="compare: apply this docs/RULES.md rule set")
+    parser.add_argument("--ledger", default=None, help="compare: try ledger (default: results/<market>/trials.csv)")
+    parser.add_argument("--grid", action="store_true", help="usage: apply Rule G to the given pilot runs")
     parser.add_argument("--seeds", type=int, nargs="+", default=None, help="default: all seeds in the config")
     parser.add_argument("--tag", default=None, help="run group name, e.g. dev or final (default: dev)")
     parser.add_argument("--split", choices=["valid", "test"], default="valid")
@@ -129,6 +226,11 @@ def main(argv: list[str] | None = None) -> None:
         if not args.runs or len(args.runs) < 2 or not args.out:
             parser.error("compare needs --runs with at least two CONFIG:TAG entries and --out")
         cmd_compare(args)
+        return
+    if args.command == "usage":
+        if not args.runs:
+            parser.error("usage needs --runs with CONFIG:TAG entries")
+        cmd_usage(args)
         return
     if not args.config:
         parser.error(f"{args.command} needs --config")

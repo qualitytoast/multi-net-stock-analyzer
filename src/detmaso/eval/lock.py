@@ -85,6 +85,10 @@ def fingerprint(cfg: Config, tag: str, seeds: list[int]) -> dict:
 
 def open_test_period(cfg: Config, tag: str, seeds: list[int], extra_reason: str | None = None) -> dict:
     """Validate and record a test-period evaluation. Returns the lock record (with an opening count)."""
+    if cfg.is_placebo:
+        raise TestLockError("placebo configs (shuffled answers) can never open the test period")
+    if not cfg.train.validate:
+        raise TestLockError("training-only runs (train.validate false) can never open the test period")
     current = fingerprint(cfg, tag, seeds)
     path = lock_path(cfg)
     lock = json.loads(path.read_text()) if path.exists() else {"market": cfg.market, "entries": []}
