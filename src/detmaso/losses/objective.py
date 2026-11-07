@@ -157,7 +157,7 @@ class DetMASOLoss:
             ic=ic.detach().cpu().numpy(),
             mean_abs_corr=float(off.abs().mean()),
             logdet_raw=float(logabs) if float(sign) > 0 else -math.inf,
-            lambda_min=float(eig.min()),
+            lambda_min=float(eig.min()) if k > 0 else float("nan"),
             affine_share=float(affine),
             cholesky_retries=retries,
             n_dead=self.n_agents - k,

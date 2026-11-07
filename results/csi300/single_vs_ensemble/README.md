@@ -1,9 +1,10 @@
 # Does the 5-agent idea help? Det-MASO vs a single network (CSI300, validation)
 
-TODO Step 1, run 2026-11-06. All numbers are on the **validation period** (2023-01-03 to 2024-02-28:
-278 trading days, IC on 258 of them); the locked test period was not used. Five training seeds per
-model; numbers are mean +- std over seeds. Full tables: [comparison.md](comparison.md); machine-readable:
-[comparison.json](comparison.json); run log: [EXPERIMENTS.md](../../../EXPERIMENTS.md) (E4-E8).
+Step 1 ([ROADMAP.md](../../../ROADMAP.md)), run 2026-11-06. All numbers are on the **validation
+period** (2023-01-03 to 2024-02-28: 278 trading days, IC on 258 of them); the locked test period was
+not used. Five training seeds per model; numbers are mean +- std over seeds. Full tables:
+[comparison.md](comparison.md); machine-readable: [comparison.json](comparison.json); run log:
+[EXPERIMENTS.md](../../../EXPERIMENTS.md) (E4-E8).
 
 ## Answer: does Det-MASO beat a single network on our data?
 
@@ -76,6 +77,15 @@ which flatters models whose validation IC swings from epoch to epoch.
 | R3 single, Det-MASO size | 0.101 | 0.095 | +0.007 |
 | R4 single + market mood | 0.140 | 0.099 | +0.042 |
 
+## Step 1 decisions (approved by the owner, 2026-11-06)
+
+These are the Step 1 decisions D1-D4, not the plan's D1-D10 in [docs/PLAN.md](../../../docs/PLAN.md).
+
+- **D1 = c, which single networks:** both sizes: one shaped like one Det-MASO agent (R2, the main comparison) and one with as many weights as all of Det-MASO (R3).
+- **D2 = b, market-state information:** add a row in which the single network also sees the scheduler's 12 market-state inputs (R4).
+- **D3 = b, what "beats" means:** 5-seed means plus a paired block bootstrap with 10,000 draws, 20-day blocks and RNG seed 0. Rule fixed before seeing any results: the reference is better if the 95% range of its advantage lies entirely above 0, the variant is better if it lies entirely below 0, otherwise there is no detectable difference. IC is primary; Sharpe is the second opinion. The settings are constants in `src/detmaso/eval/compare.py`, not command-line options.
+- **D4 = a, training recipe:** every row is trained with Det-MASO's recipe unchanged (B5).
+
 ## Assumptions
 
 Single networks (R2; R3 and R4 differ only as stated):
@@ -84,7 +94,7 @@ Single networks (R2; R3 and R4 differ only as stated):
 - **B2 Inputs:** the same 34 processed stock features. R4 appends the scheduler's 12 standardized, clipped market-state numbers (data through the previous day) to every stock (46 inputs, 5,633 weights).
 - **B3 Score:** the network output, z-scored across the day's stocks with the same rule as each agent (paper Eq. 2; a constant output scores 0, deviation 4). There is no mixing step.
 - **B4 Loss per training date:** -1.0 x IC - 0.5 x Sharpe, with Det-MASO's soft-rank IC (kappa_soft 1.0; weight 1, no regime mask) and Det-MASO's Sharpe term (long-short portfolio weighted by the score, expanding window within each epoch, past values frozen, on after 20 dates). No diversity or entropy term (c_div = c_ent = 0, enforced by config validation).
-- **B5 Training recipe** (decision D4): identical to Det-MASO. AdamW, learning rate cosine 1e-3 -> 1e-5, decoupled weight decay 1e-4, gradient clip 1.0, one step per training date in time order, early stopping on the 3-epoch-smoothed validation IC with patience 8, best epoch restored, at most 200 epochs.
+- **B5 Training recipe** (Step 1 decision D4): identical to Det-MASO. AdamW, learning rate cosine 1e-3 -> 1e-5, decoupled weight decay 1e-4, gradient clip 1.0, one step per training date in time order, early stopping on the 3-epoch-smoothed validation IC with patience 8, best epoch restored, at most 200 epochs.
 - **B6 Same data and evaluation:** data tag 2026-11-04; training dates 2012-01-04 to 2022-12-02 (purged); seeds 0-4; daily top-10% equal-weight backtest; same metrics.
 - **B7 Not tuned:** the settings come from the paper, tuned for Det-MASO.
 - **B8 No regimes:** K-means regime labels are not used by a single network, in training or inference.

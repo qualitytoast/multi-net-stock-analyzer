@@ -1,4 +1,4 @@
-# Step 1 (TODO.md), main baseline: one network shaped like one Det-MASO agent (34 -> 64 -> 32 -> 16 -> 1),
+# Step 1 (ROADMAP.md), main baseline: one network shaped like one Det-MASO agent (34 -> 64 -> 32 -> 16 -> 1),
 # trained with the IC and Sharpe terms only: no scheduler, no regime mask, no diversity or entropy term.
 # Data, training recipe and evaluation are those of configs/csi300.yaml (lambda_mask is inherited but
 # unused: a single network has no regime mask). Assumptions B1-B8 are in

@@ -47,7 +47,7 @@ Done when: the plot exists, and the best agent count has been chosen on walk-for
 - [ ] Run all agents as one batched network (torch.func.stack_module_state + vmap) instead of a loop.
 - [ ] Train several seeds and configs in one batched run.
 - [ ] Keep all data on the GPU.
-- [ ] Revisit change 4 (float64): it is slow on most GPUs. Try float32 with a fix for the shrinking output scale.
+- [ ] Revisit change 3 (float64): it is slow on most GPUs. Try float32 with a fix for the shrinking output scale.
 
 ## Step 6: More data
 

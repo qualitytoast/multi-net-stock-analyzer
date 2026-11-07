@@ -1,4 +1,4 @@
-"""Step 1 baseline (TODO.md): one plain network instead of Det-MASO's agents + scheduler.
+"""Step 1 baseline (ROADMAP.md): one plain network instead of Det-MASO's agents + scheduler.
 
 Shaped like one Det-MASO agent (model.hidden) and standardized exactly like one (paper Eq. 2,
 DEVIATIONS 4), so its score is directly comparable. There is no scheduler (weight 1), no regime

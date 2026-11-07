@@ -106,7 +106,7 @@ def cmd_compare(args) -> None:
         if not sep or not config_path or not tag:
             raise SystemExit(f"--runs entries are CONFIG:TAG, got {spec!r}")
         runs.append((load_config(config_path), config_path, tag))
-    path = run_compare(runs, reference=args.reference, out_dir=Path(args.out), n_boot=args.bootstrap, block=args.block, rng_seed=args.rng_seed)
+    path = run_compare(runs, reference=args.reference, out_dir=Path(args.out))
     log.info("comparison written to %s", path)
 
 
@@ -117,9 +117,6 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--runs", nargs="+", metavar="CONFIG:TAG", help="compare: the run groups to compare")
     parser.add_argument("--reference", help="compare: tag of the reference run group (default: the first)")
     parser.add_argument("--out", help="compare: output directory")
-    parser.add_argument("--bootstrap", type=int, default=10_000, help="compare: bootstrap draws")
-    parser.add_argument("--block", type=int, default=20, help="compare: bootstrap block length in trading days")
-    parser.add_argument("--rng-seed", type=int, default=0, help="compare: bootstrap random seed")
     parser.add_argument("--seeds", type=int, nargs="+", default=None, help="default: all seeds in the config")
     parser.add_argument("--tag", default=None, help="run group name, e.g. dev or final (default: dev)")
     parser.add_argument("--split", choices=["valid", "test"], default="valid")

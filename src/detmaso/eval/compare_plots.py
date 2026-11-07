@@ -18,6 +18,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.ticker import PercentFormatter  # noqa: E402
 
+from detmaso.eval.compare import _seed_values  # noqa: E402
+
 SURFACE, INK, INK2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
 SERIES_1, SERIES_2 = "#2a78d6", "#eb6834"
 
@@ -39,11 +41,6 @@ ADVANTAGE = [("ic", "IC"), ("icir", "ICIR"), ("sharpe", "Sharpe")]
 def _label(v) -> str:
     """Display name: the paper config is Det-MASO itself."""
     return "Det-MASO (paper config)" if v.name == "paper" else v.name
-
-
-def _seed_values(v, metric: str) -> np.ndarray:
-    section = "ic" if metric in ("ic", "icir") else "port"
-    return np.array([p[section][metric] for p in v.per_seed])
 
 
 def _title(fig, text: str) -> None:

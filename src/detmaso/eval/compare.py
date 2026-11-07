@@ -1,4 +1,4 @@
-"""Side-by-side comparison of trained variants on the validation period (TODO.md Step 1; plan D3).
+"""Side-by-side comparison of trained variants on the validation period (Step 1 in ROADMAP.md; Step 1 decision D3).
 
 Each run group must already be evaluated with ``detmaso evaluate --split valid``, which saves
 runs/<market>/<tag>/series_valid.parquet (per seed and decision date: daily IC, portfolio and
@@ -15,7 +15,8 @@ Statistics
   shared by every variant, which pairs the comparison by day; (2) redraws each variant's seeds with
   replacement (training randomness; seeds are not paired across variants). The seed-mean metric is
   recomputed and the advantage recorded; the 95% range is the 2.5-97.5% percentiles of the draws.
-- Rule fixed before seeing any results (plan D3): the reference is better if the 95% range of its
+- Rule fixed before seeing any results (Step 1 decision D3, recorded in
+  results/csi300/single_vs_ensemble/README.md): the reference is better if the 95% range of its
   advantage lies entirely above 0, the variant is better if it lies entirely below 0, otherwise there
   is no detectable difference. IC is the primary metric and Sharpe the second opinion. Max drawdown
   is not bootstrapped (block resampling breaks the day order it depends on).
@@ -40,6 +41,7 @@ from detmaso.mdtable import md_table
 from detmaso.model.factory import build_model
 
 BOOT_METRICS = ("ic", "icir", "sharpe")
+N_BOOT, BLOCK, RNG_SEED = 10_000, 20, 0  # Step 1 decision D3, fixed before seeing results
 REFERENCE_BETTER, VARIANT_BETTER, NO_DIFFERENCE = "reference better", "variant better", "no detectable difference"
 
 
@@ -166,9 +168,7 @@ def _per_seed_stat(metric: str, x: np.ndarray, days_per_year: float) -> np.ndarr
     raise ValueError(metric)
 
 
-def bootstrap_advantage(
-    variants: list[Variant], ref_index: int, n_boot: int, block: int, rng_seed: int, chunk: int = 1000
-) -> dict[str, dict[str, np.ndarray]]:
+def bootstrap_advantage(variants: list[Variant], n_boot: int, block: int, rng_seed: int, chunk: int = 1000) -> dict[str, dict[str, np.ndarray]]:
     """Bootstrap draws of the seed-mean metric for every variant: {variant name: {metric: [n_boot]}}."""
     rng = np.random.default_rng(rng_seed)
     n_ic, n_ret = variants[0].ic.shape[1], variants[0].port.shape[1]
@@ -190,7 +190,7 @@ def bootstrap_advantage(
 
 
 def rule(ci_low: float, ci_high: float) -> str:
-    """Plan D3, fixed before seeing results."""
+    """Step 1 decision D3, fixed before seeing results."""
     if ci_low > 0:
         return REFERENCE_BETTER
     if ci_high < 0:
@@ -203,9 +203,9 @@ def _seed_values(v: Variant, metric: str) -> np.ndarray:
     return np.array([p[section][metric] for p in v.per_seed])
 
 
-def summarize(variants: list[Variant], ref_index: int, n_boot: int, block: int, rng_seed: int) -> dict:
+def summarize(variants: list[Variant], ref_index: int, n_boot: int = N_BOOT, block: int = BLOCK, rng_seed: int = RNG_SEED) -> dict:
     ref = variants[ref_index]
-    draws = bootstrap_advantage(variants, ref_index, n_boot, block, rng_seed)
+    draws = bootstrap_advantage(variants, n_boot, block, rng_seed)
     out = {"variants": {}, "advantage": {}}
     for v in variants:
         stats = {}
@@ -249,7 +249,7 @@ def write_markdown(variants: list[Variant], ref: Variant, stats: dict, figs: lis
         f"- Evaluated dates: {v0.decision_dates[0].date()} .. {v0.decision_dates[-1].date()} ({len(v0.decision_dates)} trading days; IC uses {len(v0.ic_dates)}). The test period is not used.",
         f"- Data tag `{v0.cfg.data.data_tag}`, data hash `{v0.cfg.data_hash()}` (shared by every run group).",
         f"- Bootstrap: {meta['n_boot']:,} draws; days redrawn in circular {meta['block']}-day blocks (one draw shared by all variants); seeds redrawn per variant; RNG seed {meta['rng_seed']}.",
-        "- Rule fixed in advance (plan D3): the reference is better if the 95% range lies entirely above 0, the variant is better if entirely below 0, otherwise no detectable difference. IC is primary; Sharpe is the second opinion.",
+        "- Rule fixed in advance (Step 1 decision D3): the reference is better if the 95% range lies entirely above 0, the variant is better if entirely below 0, otherwise no detectable difference. IC is primary; Sharpe is the second opinion.",
         "",
         "## Run groups",
         "",
@@ -319,7 +319,9 @@ def write_markdown(variants: list[Variant], ref: Variant, stats: dict, figs: lis
     return "\n".join(lines) + "\n"
 
 
-def run_compare(runs: list[tuple[Config, str, str]], reference: str | None, out_dir: Path, n_boot: int = 10_000, block: int = 20, rng_seed: int = 0) -> Path:
+def run_compare(
+    runs: list[tuple[Config, str, str]], reference: str | None, out_dir: Path, n_boot: int = N_BOOT, block: int = BLOCK, rng_seed: int = RNG_SEED
+) -> Path:
     """runs: (config, config path, run-group tag) triples. Writes comparison.md / .json and figures to out_dir."""
     variants = [load_variant(cfg, path, tag) for cfg, path, tag in runs]
     check_comparable(variants)

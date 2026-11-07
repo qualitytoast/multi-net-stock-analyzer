@@ -373,6 +373,27 @@ def test_single_network_loss_is_the_ic_and_sharpe_terms_only():
     assert loss == float((-cfg.c_ic * terms.ic_term - cfg.c_sr * terms.sr).detach())
 
 
+def test_single_network_constant_output_day_scores_zero_without_crashing():
+    # DEVIATIONS 4: a constant output scores 0 for that date; with one network no agent is live.
+    from detmaso.model.single import SingleMLP
+
+    torch.manual_seed(0)
+    model = SingleMLP(d_in=6, hidden=(8, 4), activation="gelu").double()
+    with torch.no_grad():
+        model.agent.net[-1].weight.zero_()
+    X, U, S = torch.randn(1, 40, 6, dtype=torch.float64), torch.ones(1, 40, dtype=torch.bool), torch.randn(1, 12)
+    out = model(X, U, S)
+    assert torch.all(out.alphas == 0)
+    terms = DetMASOLoss(LossConfig(c_div=0.0, c_ent=0.0), 1)(
+        out.alphas[0], out.alpha_hat[0], out.logits[0], out.w[0], torch.randn(40, dtype=torch.float64) * 0.05, U[0], None,
+        _long_sharpe_history(),
+    )  # fmt: skip
+    assert terms.n_dead == 1 and math.isnan(terms.lambda_min)
+    assert float(terms.ic[0]) == 0.0 and torch.isfinite(terms.loss)
+    terms.loss.backward()
+    assert all(p.grad is None or float(p.grad.abs().sum()) == 0.0 for p in model.parameters())
+
+
 def test_no_regime_mask_weights_every_agent_ic_fully():
     torch.manual_seed(0)
     n, k = 40, 5

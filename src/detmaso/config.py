@@ -81,7 +81,7 @@ class ModelConfig:
     dtype: str = "float64"  # A35, revised to float64 (DEVIATIONS 3); "float32" also supported
     encoder_hidden: int = 16  # A19: hidden width of each per-window MLP (its output is fixed at 16)
     head_hidden: int = 32  # paper: W_1 in R^{32x16}
-    # Step 1 (TODO.md): "single_mlp" = one agent-shaped network, no scheduler, no regime mask.
+    # Step 1 (ROADMAP.md): "single_mlp" = one agent-shaped network, no scheduler, no regime mask.
     kind: str = post_paper("detmaso")
     # Step 1, single_mlp only: append the 12 market-state inputs (the scheduler's s_t) to every stock.
     market_state_input: bool = post_paper(False)
@@ -242,7 +242,7 @@ def _read_yaml(path: Path, chain: tuple[Path, ...] = ()) -> dict:
     return raw if base is None else _merge(_read_yaml(path.parent / base, (*chain, path)), raw)
 
 
-_TOP_LEVEL = {"market", "run_dir", "variant", "data", "splits", "features", "regimes", "model", "loss", "train", "backtest"}
+_TOP_LEVEL = {f.name for f in dataclasses.fields(Config)}
 
 
 def load_config(path: str | Path) -> Config:

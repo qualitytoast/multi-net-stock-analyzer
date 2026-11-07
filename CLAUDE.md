@@ -12,4 +12,4 @@ Code Changes:
 Bookkeeping:
 - Log every experiment run in EXPERIMENTS.md: date, config, data used, results, kept or dropped
 - Log every major milestone in ROADMAP.md, and remove that major milestone from TODO.md.
-- Check READMD.md after each major milestone and tell me when it has fallen behind
+- Check README.md after each major milestone and tell me when it has fallen behind

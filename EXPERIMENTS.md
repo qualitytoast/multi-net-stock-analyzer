@@ -53,7 +53,7 @@ Common to every entry unless stated otherwise:
 Write-up, figures and the answer: [results/csi300/single_vs_ensemble/README.md](results/csi300/single_vs_ensemble/README.md).
 All five run groups: 5 seeds, the paper's training recipe (E3), validation only. Comparison statistics:
 paired block bootstrap (20-day blocks shared across models, seeds redrawn per model, 10,000 draws),
-with the decision rule fixed before the runs (plan decision D3). "Advantage" below = Det-MASO (E3) minus
+with the decision rule fixed before the runs (Step 1 decision D3). "Advantage" below = Det-MASO (E3) minus
 the model; the range is the 95% bootstrap range.
 
 ### E4: `paper_rerun`, regression check
