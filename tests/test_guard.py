@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from detmaso.eval import guard, ledger
@@ -105,6 +106,37 @@ def test_ledger_survives_concurrent_writers(tmp_path):
     assert all(p.wait(timeout=120) == 0 for p in procs)
     df = ledger.read(path)
     assert len(df) == 40 and sorted(df["try_no"].tolist()) == list(range(1, 41))
+
+
+def test_evaluating_a_subset_of_seeds_keeps_the_ledgers_all_seed_metrics(tmp_path, monkeypatch):
+    """`evaluate --split valid --seeds 0` must not replace the configuration's 5-seed metrics with one seed's."""
+    from detmaso.cli import main
+    from detmaso.config import load_config
+    from detmaso.eval import report
+
+    yaml = tmp_path / "x.yaml"
+    yaml.write_text(f"base: {ROOT / 'configs/csi300.yaml'}\nvariant: ledger_t\nrun_dir: {tmp_path / 'runs'}\n")
+    cfg = load_config(yaml)
+    group = tmp_path / "runs" / "g"
+    group.mkdir(parents=True)
+    (group / "config.json").write_text(json.dumps({"hash": cfg.hash()}))
+
+    def fake_evaluate(cfg, tag, seeds, split, lock_record=None):  # saves what `evaluate` saves; seed s has IC 0.1 + 0.01 s
+        run = cfg.run_path / tag
+        per_seed = [{"seed": s, "ic": {"ic": 0.1 + 0.01 * s}, "port": {"sharpe": 1.0}, "excess": {"sharpe": 0.5}} for s in seeds]
+        (run / "results_valid.json").write_text(json.dumps({"per_seed": per_seed}))
+        pd.DataFrame({"seed": np.repeat(seeds, 4), "port": np.tile([0.01, -0.01, 0.02, 0.0], len(seeds)), "bench": 0.0}).to_parquet(
+            run / "series_valid.parquet", index=False
+        )  # fmt: skip
+        return run / "report_valid.md"
+
+    trials = tmp_path / "trials.csv"
+    monkeypatch.setattr(report, "evaluate_and_report", fake_evaluate)
+    monkeypatch.setattr(ledger, "ledger_path", lambda market: trials)
+    main(["evaluate", "--config", str(yaml), "--tag", "g"])
+    main(["evaluate", "--config", str(yaml), "--tag", "g", "--seeds", "0"])
+    row = ledger.read(trials).iloc[0]
+    assert len(ledger.read(trials)) == 1 and row["ic"] == pytest.approx(0.12) and row["ic_sd_seeds"] > 0
 
 
 # Rules (docs/RULES.md) ----------------------------------------------------------------------------

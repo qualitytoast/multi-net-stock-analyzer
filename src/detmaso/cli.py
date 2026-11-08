@@ -12,8 +12,9 @@ A run group (runs/<market>/<tag>/) belongs to one configuration: training refuse
 trained with a different config hash, and evaluation refuses a config that does not match the group.
 
 Guards (CLAUDE.md): `train` registers every configuration in the try ledger results/<market>/trials.csv
-before training (aborted runs included), `evaluate --split valid` adds its validation metrics, and
-`compare` reports each variant's try number, deflated Sharpe and deflated IC from that ledger.
+before training (aborted runs included), `evaluate --split valid` over all configured seeds adds its
+validation metrics, and `compare` reports each variant's try number, deflated Sharpe and deflated IC
+from that ledger.
 
 The test period is locked (plan: "opened once, in Milestone 9, with a frozen config"). Evaluating
 it needs --unlock-test and an explicit --tag, uses all configured seeds, and is recorded in the
@@ -121,8 +122,11 @@ def cmd_evaluate(cfg: Config, args) -> None:
         from detmaso.eval import ledger
 
         trials = ledger.ledger_path(cfg.market)
-        if ledger.try_number(trials, cfg.hash()) is None and not ledger.read(trials)["config_hash"].eq(cfg.hash()).any():
+        if not ledger.read(trials)["config_hash"].eq(cfg.hash()).any():
             ledger.register(trials, cfg, args.config, args.tag, [], note="registered at evaluation (trained before the ledger existed)")
+        if sorted(args.seeds) != sorted(cfg.train.seeds):
+            log.warning("seeds %s are not the configured seeds %s: validation metrics not recorded in the try ledger", args.seeds, list(cfg.train.seeds))
+            return
         ledger.record_metrics(trials, cfg, ledger.validation_metrics(cfg.run_path / args.tag))
         log.info("validation metrics recorded in the try ledger %s", trials)
 
@@ -199,8 +203,7 @@ def cmd_compare(args) -> None:
     if args.split != "valid":
         raise SystemExit("comparisons use the validation period only; the test period is never used to compare variants")
     runs = _parse_runs(args.runs)
-    trials = Path(args.ledger) if args.ledger else ledger.ledger_path(runs[0][0].market)
-    path = run_compare(runs, reference=args.reference, out_dir=Path(args.out), rule=args.rule, ledger_path=trials)
+    path = run_compare(runs, reference=args.reference, out_dir=Path(args.out), rule=args.rule, ledger_path=ledger.ledger_path(runs[0][0].market))
     log.info("comparison written to %s", path)
 
 
@@ -212,7 +215,6 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--reference", help="compare: tag of the reference run group (default: the first)")
     parser.add_argument("--out", help="compare (required) / usage (optional): output directory")
     parser.add_argument("--rule", choices=["scheduler_balance"], default=None, help="compare: apply this docs/RULES.md rule set")
-    parser.add_argument("--ledger", default=None, help="compare: try ledger (default: results/<market>/trials.csv)")
     parser.add_argument("--grid", action="store_true", help="usage: apply Rule G to the given pilot runs")
     parser.add_argument("--seeds", type=int, nargs="+", default=None, help="default: all seeds in the config")
     parser.add_argument("--tag", default=None, help="run group name, e.g. dev or final (default: dev)")

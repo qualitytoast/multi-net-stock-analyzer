@@ -45,6 +45,7 @@ from detmaso.config import Config
 from detmaso.data.features import FEATURE_NAMES
 from detmaso.eval import guard, ledger
 from detmaso.eval.metrics import ic_summary, portfolio_metrics
+from detmaso.losses.balance import effective_agents
 from detmaso.mdtable import md_table
 from detmaso.model.factory import build_model
 
@@ -88,12 +89,6 @@ def _seed_frames(series: pd.DataFrame) -> dict[int, pd.DataFrame]:
 def seed_metrics(ic: np.ndarray, port: np.ndarray, bench: np.ndarray, start, end, qlib_days: int) -> dict:
     """The report's per-seed metrics from one seed's daily series (eval.report.evaluate_seed)."""
     return {"ic": ic_summary(ic), "port": portfolio_metrics(port, start, end, qlib_days), "excess": portfolio_metrics(port - bench, start, end, qlib_days)}
-
-
-def _effective(weights: np.ndarray) -> float:
-    w = np.asarray(weights, dtype=float)
-    w = w[w > 0] / w.sum()
-    return float(np.exp(-(w * np.log(w)).sum()))
 
 
 def load_variant(cfg: Config, config_path: str, tag: str, split: str = "valid") -> Variant:
@@ -140,13 +135,14 @@ def load_variant(cfg: Config, config_path: str, tag: str, split: str = "valid") 
     agents = None
     if len(w_cols) > 1:
         entropy = np.stack([frames[s]["entropy"].to_numpy(float) for s in seeds])
+        seed_weights = [frames[s][w_cols].to_numpy(float).mean(axis=0) for s in seeds]
         agents = {
             "n_agents": len(w_cols),
             "mean_abs_corr": float(np.mean([np.nanmean(frames[s]["abs_corr"].to_numpy(float)) for s in seeds])),
             "entropy": float(entropy.mean()),
             "effective_agents_per_day": float(np.exp(entropy).mean()),
-            "effective_agents_over_time": float(np.mean([_effective(frames[s][w_cols].to_numpy(float).mean(axis=0)) for s in seeds])),
-            "mean_weights": np.mean([frames[s][w_cols].to_numpy(float).mean(axis=0) for s in seeds], axis=0).round(3).tolist(),
+            "effective_agents_over_time": float(np.mean([effective_agents(w / w.sum()) for w in seed_weights])),
+            "mean_weights": np.mean(seed_weights, axis=0).round(3).tolist(),
         }
     dead_valid = [p.get("dead_days") for p in report["per_seed"]]
     n_weights = sum(p.numel() for p in build_model(cfg, d_in=len(FEATURE_NAMES)).parameters())

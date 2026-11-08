@@ -139,4 +139,15 @@ kept the rules as written (no rule change), so the change was dropped (EXPERIMEN
 
 ## Rule changes
 
-None.
+- **2026-11-07, how `detmaso compare` redraws seeds (Step 1 rule; logged with the owner's OK).**
+  - Before (Step 1's results): after the shared day draws, every model's seeds were redrawn from that same
+    random stream, one model after another, so a model's draws depended on which other models were in the
+    comparison and in what order.
+  - Now: each model redraws its seeds from a random stream of its own (RNG seed 0 and the model's name).
+    Unchanged: the shared 20-day day blocks, 10,000 draws, RNG seed 0, and the 95%-range thresholds.
+  - Reason: Rule K (fixed 2026-11-07, before its runs) needs each model's random stream independent of row
+    order, so that the same pair of models gets the same range in every report.
+  - Made after Step 1's results were seen. Effect on the two Step 1 comparisons that the scheduler-balance
+    report repeats: Det-MASO minus the single network, IC [-0.0878, +0.0114] becomes [-0.0882, +0.0102];
+    minus the single network with mood inputs, [-0.1435, -0.0166] becomes [-0.1423, -0.0177]. Verdicts are
+    unchanged.

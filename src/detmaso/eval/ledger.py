@@ -2,8 +2,8 @@
 
 results/<market>/trials.csv has one row per configuration (keyed by its config hash), in the order the
 configurations were first trained. `detmaso train` registers a configuration before training starts, so
-runs that later abort are counted too; `detmaso evaluate --split valid` adds the validation metrics that the
-deflated Sharpe and deflated IC need.
+runs that later abort are counted too; `detmaso evaluate --split valid` over all configured seeds adds the
+validation metrics that the deflated Sharpe and deflated IC need.
 
 A configuration counts as a try (gets a try number) when it is trained on the real answers with validation
 switched on: every such run checks the validation IC each epoch, so each one is a look at validation.
