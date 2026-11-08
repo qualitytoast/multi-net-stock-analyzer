@@ -1,0 +1,8 @@
+# Load-balancing strength from the grid set by Rule G (docs/RULES.md): the paper config plus the
+# penalty c_bal x KL(mood shares || usage); 5 seeds and the paper's training recipe.
+base: ../csi300.yaml
+variant: bal_c1e0
+
+loss:
+  c_bal: 1.0e+00
+  balance_target: regime

@@ -20,6 +20,7 @@ from pathlib import Path
 import yaml
 
 MODEL_KINDS = ("detmaso", "single_mlp")
+BALANCE_TARGETS = ("uniform", "regime")
 _POST_PAPER, _LABEL = "post_paper", "label"
 
 
@@ -103,6 +104,18 @@ class LossConfig:
     sharpe_min_points: int = 20  # A24
     sharpe_eps: float = 1e-8
     sharpe_window: int | None = None  # A24: None = expanding within the epoch (T_train = #train dates)
+    # Scheduler load balancing (ROADMAP "Fix the scheduler collapse"; docs/RULES.md): the loss adds
+    # c_bal * KL(target || usage), usage = the scheduler's mean weight per agent over all training days.
+    c_bal: float = post_paper(0.0)
+    # "uniform" = equal shares; "regime" = each regime's share of the training days.
+    balance_target: str = post_paper("uniform")
+
+    def __post_init__(self):
+        object.__setattr__(self, "c_bal", float(self.c_bal))  # 1 and 1.0 must give the same fingerprint
+        if self.c_bal < 0:
+            raise ValueError(f"loss.c_bal must be >= 0, got {self.c_bal}")
+        if self.balance_target not in BALANCE_TARGETS:
+            raise ValueError(f"loss.balance_target must be one of {BALANCE_TARGETS}, got {self.balance_target!r}")
 
 
 @dataclass(frozen=True)
@@ -123,6 +136,25 @@ class TrainConfig:
     max_nonfinite: int = 10
     grad_norm_every: int = 50  # log per-term gradient norms every N steps
     diversity_last_epochs: int = 40  # A44
+    # False = a training-only run (the strength pilot, docs/RULES.md Rule G): exactly max_epochs, the
+    # validation period is never evaluated, the last epoch is the model, and `evaluate` refuses the run.
+    validate: bool = post_paper(True)
+
+
+@dataclass(frozen=True)
+class PlaceboConfig:
+    """Placebo test (docs/RULES.md, Rule P): shuffle the answers so there is nothing real to find.
+
+    shuffle_seed None = real answers. Otherwise, within each block of ``block_days`` model dates, the
+    stocks labelled on every day of the block get another such stock's 20-day labels and next-day returns.
+    """
+
+    shuffle_seed: int | None = None
+    block_days: int = 20
+
+    def __post_init__(self):
+        if self.block_days < 1:
+            raise ValueError(f"placebo.block_days must be >= 1, got {self.block_days}")
 
 
 @dataclass(frozen=True)
@@ -143,6 +175,8 @@ class Config:
     loss: LossConfig = field(default_factory=LossConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
+    # Whole section left out of both hashes while off; never part of data_hash (the prepared data is reused).
+    placebo: PlaceboConfig = post_paper(PlaceboConfig())
     variant: str = label("paper")  # name shown in reports and comparisons
 
     def __post_init__(self):
@@ -153,6 +187,14 @@ class Config:
             raise ValueError("model.kind single_mlp trains with the IC and Sharpe terms only: set loss.c_div and loss.c_ent to 0")
         if m.market_state_input and m.kind != "single_mlp":
             raise ValueError("model.market_state_input is only supported with model.kind single_mlp")
+        if loss.c_bal > 0 and m.kind != "detmaso":
+            raise ValueError("loss.c_bal balances a scheduler, so it needs model.kind detmaso")
+        if loss.balance_target != "uniform" and loss.c_bal == 0:
+            raise ValueError("loss.balance_target only matters with loss.c_bal > 0")
+
+    @property
+    def is_placebo(self) -> bool:
+        return self.placebo.shuffle_seed is not None
 
     @property
     def run_path(self) -> Path:
@@ -261,5 +303,6 @@ def load_config(path: str | Path) -> Config:
         loss=_build(LossConfig, raw.get("loss")),
         train=_build(TrainConfig, raw.get("train")),
         backtest=_build(BacktestConfig, raw.get("backtest")),
+        placebo=_build(PlaceboConfig, raw.get("placebo")),
         variant=raw.get("variant", "paper"),
     )

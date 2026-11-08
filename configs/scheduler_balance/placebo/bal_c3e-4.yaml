@@ -1,0 +1,10 @@
+# Placebo (docs/RULES.md, Rule P): a strength from the placebo grid, on shuffled answers.
+base: ../../csi300.yaml
+variant: placebo_bal_c3e-4
+
+loss:
+  c_bal: 3.0e-04
+  balance_target: regime
+
+placebo:
+  shuffle_seed: 0

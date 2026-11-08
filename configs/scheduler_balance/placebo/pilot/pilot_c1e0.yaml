@@ -1,0 +1,6 @@
+# Placebo (docs/RULES.md, Rule P): the strength pilot on shuffled answers.
+base: ../../pilot/pilot_c1e0.yaml
+variant: placebo_bal_pilot_c1e0
+
+placebo:
+  shuffle_seed: 0

@@ -6,6 +6,12 @@ not used. Five training seeds per model; numbers are mean +- std over seeds. Ful
 [comparison.md](comparison.md); machine-readable: [comparison.json](comparison.json); run log:
 [EXPERIMENTS.md](../../../EXPERIMENTS.md) (E4-E8).
 
+Note (2026-11-07): the 95% ranges here, and in comparison.md and
+[state_vs_plain/comparison.md](state_vs_plain/comparison.md), come from the earlier resampling method, in
+which every model's seeds were redrawn from one shared random stream. `detmaso compare` now redraws each
+model's seeds from a stream of its own ([docs/RULES.md](../../../docs/RULES.md), "Rule changes"); that moves
+the ranges by about 0.01 and changes no verdict.
+
 ## Answer: does Det-MASO beat a single network on our data?
 
 **No.** A single network the size of one Det-MASO agent, trained with only the IC and Sharpe loss
@@ -26,8 +32,9 @@ and mostly comes from epoch picking (0.140 at the picked epoch, 0.099 averaged o
 data the 5-agent machinery adds nothing over one plain network, and the best estimate is that it costs
 about 0.04 IC. Caveats: this is one short, falling-market period; every model's epoch was chosen on the
 same validation days; and Det-MASO's scheduler is collapsed (about one agent per day), so this tests
-Det-MASO as it trains with the paper's settings, not a working 5-specialist system (that is Step 2).
-Step 3 re-checks this under walk-forward evaluation.
+Det-MASO as it trains with the paper's settings, not a working 5-specialist system (that was the
+[scheduler-collapse fix](../scheduler_balance/README.md)). The walk-forward step in
+[TODO.md](../../../TODO.md) re-checks this.
 
 ## Results table
 

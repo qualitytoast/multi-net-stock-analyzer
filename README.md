@@ -15,6 +15,9 @@ configuration's results (a test pins its fingerprint to the one recorded when th
   [DEVIATIONS.md](DEVIATIONS.md).
 - Every training run is logged in [EXPERIMENTS.md](EXPERIMENTS.md); finished milestones are in
   [ROADMAP.md](ROADMAP.md) and open work in [TODO.md](TODO.md).
+- Every configuration trained with validation switched on is counted as a try in
+  [results/csi300/trials.csv](results/csi300/trials.csv), and each change is judged by rules written in
+  [docs/RULES.md](docs/RULES.md) before its first run (see "Guards" in CLAUDE.md).
 
 ## Status
 
@@ -37,6 +40,17 @@ scored better than Det-MASO on every metric (IC 0.103 vs 0.062, Sharpe 0.66 vs 0
 278 validation days ("no detectable difference"), so Det-MASO does not beat a single network. A
 Det-MASO-sized single network does the same; switching off the diversity penalty changes nothing
 detectable. Details: [write-up](results/csi300/single_vs_ensemble/README.md).
+
+**Scheduler collapse fix (2026-11-07): dropped.** A load-balancing penalty (each agent's average scheduler
+weight is pulled toward its market mood's share of the training days) fixes the collapse in the usage sense: from
+strength 0.1 up, every agent gets at least half its target share in every seed. The agents mostly become mood
+specialists, but not reliably in every seed, mainly for the rarest mood (Tail-Risk: 59 training days, all in
+2015), which the rule fixed in advance does not allow; the owner kept the rule as written, so the change was
+dropped (the penalty stays in the code, off by default). Validation IC did not change detectably either
+(0.036-0.072 vs 0.062; the validation period contains only the two common moods). A placebo run on shuffled answers
+found nothing, as it should. Details: [write-up](results/csi300/scheduler_balance/README.md).
+Every result now carries its try number, deflated Sharpe and deflated IC (see "Guards" in CLAUDE.md and
+[docs/RULES.md](docs/RULES.md)).
 
 The market data is not included in this repository: it is downloaded by `scripts/get_cn_data.sh`
 from the community Qlib dataset (chenditc/investment_data), whose data has no explicit license, so
@@ -64,6 +78,25 @@ the dataset is not redistributed here.
   values, silhouette curve (K = 2 is optimal; the paper's 5 is kept per decision D2), regime coverage.
 - [Step 1: Det-MASO vs a single network](results/csi300/single_vs_ensemble/README.md) (validation only,
   5 seeds per model): the answer paragraph, results with 95% bootstrap ranges, figures, assumptions.
+- [Scheduler collapse fix](results/csi300/scheduler_balance/README.md) (validation and training days, 5 seeds per
+  model): the penalty, the placebo, the strength pilot, the rules and their outcomes, scheduler usage and routing.
+
+## What didn't work
+
+Every idea tried so far that did not help, with its result and why it was dropped (guard "report everything";
+try numbers from [results/csi300/trials.csv](results/csi300/trials.csv), validation numbers as mean +- std over
+5 seeds with 95% ranges from the paired 20-day block resampling).
+
+| Idea | Try # | Result | Why it was dropped | Details |
+|---|---|---|---|---|
+| ReLU agents (the planned default) | 1-2 | Training aborted in epoch 2-3: a rare-mood agent's last hidden layer switched off for every stock | Unstable; replaced by GELU | DEVIATIONS 1, E1 |
+| Adam with coupled L2 weight decay (planned default) | 1, 3 | Rare-mood agents' output scale shrank about 35% per epoch | Unstable; replaced by AdamW | DEVIATIONS 2, E1 |
+| float32 networks (planned default) | 1-4 | Starved agents' output spread fell below float32 precision | Replaced by float64 | DEVIATIONS 3, E1 |
+| Aborting training when an agent's output is constant (planned safeguard) | 5 | Training aborted in epoch 11 | Replaced by "score 0 for that day" | DEVIATIONS 4, E1 |
+| Det-MASO without the diversity penalty | 7 | IC 0.088 +- 0.058 vs 0.062 +- 0.010; Det-MASO's lead -0.026 [-0.086, +0.031] | No detectable gain; seeds very unstable (IC 0.035 to 0.181) | E5 |
+| A Det-MASO-sized single network | 9 | IC 0.101 +- 0.007 vs 0.103 +- 0.002 for the one-agent size | More weights changed nothing | E7 |
+| Det-MASO's 5-agent machinery itself, as the paper trains it | 6 vs 8 | IC 0.062 +- 0.010 vs 0.103 +- 0.002 for one plain network; Det-MASO's lead -0.041 [-0.088, +0.011] | Does not beat a single network on our data (still the reproduction's subject, so kept as the reference) | [Step 1](results/csi300/single_vs_ensemble/README.md) |
+| Load-balancing penalty on the scheduler (strengths 0.03-10) | 11-16 | Usage fixed from 0.1 up; specialists not reliable (mostly Tail-Risk); IC 0.036-0.072, no detectable difference from 0.062; deflated IC at most 72% | Its pre-written rule found no reliable specialists ("all agents used, but no specialists"); the owner kept the rule as written | [write-up](results/csi300/scheduler_balance/README.md), E12-E17 |
 
 ## Setup
 
@@ -71,7 +104,7 @@ the dataset is not redistributed here.
 # Python 3.12 is required (pyqlib 0.9.7 has no 3.13 wheels); uv installs it for you.
 uv sync
 ./scripts/get_cn_data.sh        # pinned community Qlib CN dataset, verified by sha256 (about 570 MB)
-uv run pytest                   # 93 tests; data-dependent ones skip until `prepare` has run
+uv run pytest                   # 161 tests; data-dependent ones skip until `prepare` has run
 ```
 
 ## Run
@@ -98,7 +131,36 @@ uv run detmaso compare  --runs configs/csi300.yaml:final configs/csi300_single_m
 
 `compare` reports each model's metrics (mean +- std over seeds) and the reference's advantage over each
 variant with a 95% range from a paired block bootstrap (validation days redrawn in 20-day blocks shared by
-all models, seeds redrawn per model), plus an early-stopping check. It refuses the test split.
+all models, seeds redrawn per model from the model's own random stream, so a model's range does not depend on
+which other models are compared), plus an early-stopping check. It refuses the test split and any run group
+not evaluated on all its configured seeds.
+
+Guards against fooling ourselves (CLAUDE.md "Guards", rules in [docs/RULES.md](docs/RULES.md)):
+
+- **Try ledger.** `train` registers every new configuration in `results/<market>/trials.csv` before training
+  starts (aborted runs count too) and `evaluate --split valid` over all configured seeds adds its validation
+  metrics (a subset of seeds is not recorded). `compare` then reports each model's try number, a 95% range for
+  its IC and Sharpe, a deflated Sharpe ratio (on the daily excess return) and a deflated IC: the probability that
+  the value beats the best of that many tries of pure luck.
+- **Rules as code.** `compare --rule scheduler_balance` applies a change's pre-written rules mechanically and writes
+  their outcome into the comparison.
+- **Placebo.** A config with `placebo: {shuffle_seed: 0}` trains and evaluates on shuffled answers (each 20-day
+  block's stocks swap their future returns), so there is nothing real to find; placebo runs are never compared with
+  real ones and can never open the test period.
+- **Training-only runs.** `train.validate: false` trains a fixed number of epochs without ever looking at the
+  validation period (used for the strength pilot); `evaluate` refuses such run groups.
+
+```bash
+# training-day scheduler usage, routing by mood and the Rule M checks (never touches validation)
+uv run detmaso usage   --runs configs/scheduler_balance/bal_c1e0.yaml:bal_c1e0 [--grid] [--out DIR]
+# a sweep judged by its rules (the try ledger is read from results/csi300/trials.csv)
+uv run detmaso compare --rule scheduler_balance --reference final --out results/csi300/scheduler_balance \
+                       --runs configs/csi300.yaml:final configs/scheduler_balance/bal_c3e-2.yaml:bal_c3e-2 ...
+```
+
+The load-balancing configs live in `configs/scheduler_balance/`: the strength pilot in `pilot/`, the six grid
+strengths as `bal_c*.yaml`, and the placebo versions in `placebo/`. The full command sequence is in the
+[write-up](results/csi300/scheduler_balance/README.md).
 
 The test period (2024-03-01 to 2026-03-01) is locked. Evaluating it needs `--unlock-test` and an
 explicit `--tag`, always uses all configured seeds, and is recorded in the git-tracked
@@ -111,27 +173,39 @@ unless `--extra-test-run "reason"` records it. Development uses the training and
 | Path | Content |
 |---|---|
 | `runs/csi300/prepared/data_report.md` | data QA: splits, universe sizes, spot prices, missing values, silhouette curve, regime coverage vs the paper, training-period single-feature ICs |
-| `runs/csi300/<tag>/seed<k>/` | `model.pt` (best epoch), `history.jsonl` (per-epoch diagnostics), `summary.json` |
+| `runs/csi300/<tag>/seed<k>/` | `model.pt` (restored best epoch), `model_last.pt` (last epoch trained), `history.jsonl` (per-epoch diagnostics; with the balance penalty also its value, training-day usage and gradient-clipping statistics), `summary.json` |
 | `runs/csi300/<tag>/report_<split>.md` | metrics vs the paper (paper config only), per-seed table, diversity, Shapley matrix, qualitative checks (multi-agent models), verdict (paper config, test only), figures |
 | `runs/csi300/<tag>/series_<split>.parquet` | per seed and decision date: daily IC, portfolio and benchmark returns, scheduler weights and entropy (input to `compare`) |
-| `<compare --out>/` | `comparison.md`, `comparison.json`, `figures/` (metrics by seed, advantage ranges, cumulative return) |
+| `runs/csi300/<tag>/usage_train.parquet` | from `usage`: per seed, checkpoint (restored or last) and training day: the day's mood, every agent's scheduler weight and dead flag |
+| `<compare --out>/` | `comparison.md`, `comparison.json`, `figures/` (metrics by seed, advantage ranges, cumulative return; with `--rule` also the strength sweep, usage relative to target and routing by mood) |
+| `results/csi300/trials.csv` | the try ledger (git-tracked): every trained configuration, its kind (counted try, placebo or training-only), run groups, seed statuses and validation metrics |
+| `docs/RULES.md` | the decision rules, written before each change's first run, and the grids set by pilots |
 
 ## Layout
 
 ```
-configs/               csi300.yaml (the paper config) and variants that inherit it with `base:`
+configs/               csi300.yaml (the paper config) and variants that inherit it with `base:`;
+                       scheduler_balance/ (pilot, grid strengths, placebo versions)
+docs/                  PLAN.md (the MVP design), RULES.md (decision rules fixed before each change's first run)
 src/detmaso/
-  config.py            typed config; every assumption is a named value; post-paper flags, `base:` inheritance
-  data/                qlib_io, returns, labels, features (34), market_state (12), regimes, splits, panel, qa
+  config.py            typed config; every assumption is a named value; post-paper flags, `base:` inheritance,
+                       placebo section
+  data/                qlib_io, returns, labels, features (34), market_state (12), regimes, splits, panel, qa,
+                       placebo (answers shuffled in 20-day blocks)
   model/               agent MLP, scheduler (window encoders + attention + head), DetMASO,
                        single network baseline (single.py), factory (model.kind)
-  losses/              soft rank (Blondel et al. L2, exact PAV), masked statistics, the full objective
-  train/trainer.py     Algorithm 1: one Adam(W) step per date, cosine LR, clipping, early stopping
+  losses/              soft rank (Blondel et al. L2, exact PAV), masked statistics, the full objective,
+                       balance (scheduler load-balancing penalty)
+  train/trainer.py     Algorithm 1: one Adam(W) step per date, cosine LR, clipping, early stopping;
+                       optional balance penalty and training-only runs
   eval/                metrics, top-decile backtest, Shapley interaction, report, test lock,
-                       compare (+ compare_plots): variants side by side on validation
-  cli.py               prepare | train | evaluate | compare
+                       compare (+ compare_plots): variants side by side on validation,
+                       ledger (try ledger), guard (deflated Sharpe and IC, the rules as code),
+                       scheduler_diag (training-day usage and routing)
+  cli.py               prepare | train | evaluate | usage | compare
 tests/                 the plan's 30 checks plus the post-MVP ones (frozen paper config, golden training
-                       run, single network, config inheritance, comparison statistics)
+                       run, single network, config inheritance, comparison statistics, balance penalty,
+                       placebo, deflated metrics, try ledger, rules)
 ```
 
 ## Copyright

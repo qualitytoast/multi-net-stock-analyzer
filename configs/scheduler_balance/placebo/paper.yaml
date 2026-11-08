@@ -1,0 +1,6 @@
+# Placebo (docs/RULES.md, Rule P): the paper config trained and evaluated on shuffled answers.
+base: ../../csi300.yaml
+variant: placebo_paper
+
+placebo:
+  shuffle_seed: 0

@@ -101,8 +101,51 @@ def test_base_cycles_and_unknown_keys_raise(tmp_path):
         ("s", {"model": {"market_state_input": True}}, "only supported with model.kind single_mlp"),
         ("paper", {"model": {"kind": "single_mlp"}, "loss": {"c_div": 0.0, "c_ent": 0.0}}, "give it a variant name"),
         ("s", {"model": {"kind": "two_mlps"}}, "model.kind must be one of"),
+        ("s", {"loss": {"c_bal": -0.1}}, "c_bal must be >= 0"),
+        ("s", {"loss": {"balance_target": "regime"}}, "only matters with loss.c_bal > 0"),
+        ("s", {"loss": {"c_bal": 0.1, "balance_target": "equal"}}, "balance_target must be one of"),
+        ("s", {"model": {"kind": "single_mlp"}, "loss": {"c_div": 0.0, "c_ent": 0.0, "c_bal": 0.1}}, "needs model.kind detmaso"),
+        ("paper", {"loss": {"c_bal": 0.1}}, "give it a variant name"),
+        ("paper", {"placebo": {"shuffle_seed": 0}}, "give it a variant name"),
+        ("s", {"placebo": {"shuffle_seed": 0, "block_days": 0}}, "block_days must be >= 1"),
     ],
 )
 def test_invalid_flag_combinations_raise(tmp_path: Path, variant, overrides, message):
     with pytest.raises(ValueError, match=message):
         synthetic_config(tmp_path, variant=variant, **overrides)
+
+
+def test_scheduler_balance_switches_enter_the_hash_only_when_changed(tmp_path):
+    from detmaso.config import PlaceboConfig
+
+    base = synthetic_config(tmp_path)
+    explicit = dataclasses.replace(
+        base, loss=dataclasses.replace(base.loss, c_bal=0.0, balance_target="uniform"), train=dataclasses.replace(base.train, validate=True),
+        placebo=PlaceboConfig(),
+    )  # fmt: skip
+    assert explicit.hash() == base.hash() and explicit.data_hash() == base.data_hash()
+    one_int = synthetic_config(tmp_path, variant="b", loss={"c_bal": 1, "balance_target": "regime"})
+    one_float = synthetic_config(tmp_path, variant="b", loss={"c_bal": 1.0, "balance_target": "regime"})
+    assert one_int.hash() == one_float.hash() != base.hash() and isinstance(one_int.loss.c_bal, float)
+    assert synthetic_config(tmp_path, variant="t", train={"validate": False}).hash() != base.hash()
+    for cfg in (one_int, synthetic_config(tmp_path, variant="p", placebo={"shuffle_seed": 3})):
+        assert cfg.data_hash() == base.data_hash()  # the prepared data is reused
+
+
+ALLOWED_BALANCE_CHANGES = {"variant", "loss.c_bal", "loss.balance_target", "train.validate", "train.max_epochs", "train.seeds", "placebo.shuffle_seed"}
+BALANCE_CONFIGS = sorted(str(p.relative_to(ROOT / "configs")) for p in (ROOT / "configs/scheduler_balance").rglob("*.yaml"))
+
+
+@pytest.mark.parametrize("name", BALANCE_CONFIGS)
+def test_scheduler_balance_configs_change_only_balance_settings(name):
+    """Every pilot, strength and placebo file is its root config (paper or single network) plus balance settings."""
+    cfg = load_config(ROOT / "configs" / name)
+    root = load_config(ROOT / "configs" / ("csi300_single_mlp.yaml" if cfg.model.kind == "single_mlp" else "csi300.yaml"))
+    a, b = _flat(root.to_dict()), _flat(cfg.to_dict())
+    changed = {k for k in a if a[k] != b[k]}
+    assert changed <= ALLOWED_BALANCE_CHANGES, changed - ALLOWED_BALANCE_CHANGES
+    assert cfg.data_hash() == load_config(PAPER).data_hash() and cfg.variant != "paper"
+    if cfg.loss.c_bal > 0:
+        assert cfg.loss.balance_target == "regime"  # docs/RULES.md: mood-share targets (decision D2 b)
+    if "placebo" in name:
+        assert cfg.is_placebo and cfg.placebo.shuffle_seed == 0

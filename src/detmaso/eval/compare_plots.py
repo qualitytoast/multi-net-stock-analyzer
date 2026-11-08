@@ -134,3 +134,134 @@ def comparison_figures(variants, ref, stats: dict, out: Path) -> list[str]:
         if len(variants) > 1:
             files += [_advantage_figure(variants, ref, stats, out), _cumulative_figure(variants, ref, out)]
     return files
+
+
+# Scheduler-balance rule figures (only with `compare --rule scheduler_balance`) -----------------------
+BLUE_RAMP = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"]
+AGENT_NAMES = ("Low-Vol Bull", "High-Vol Bull", "Sideways", "Low-Vol Bear", "Tail-Risk")
+
+
+def _seed_best(diag: dict, key: str) -> list:
+    return [s["best"][key] for s in diag["seeds"].values() if "best" in s]
+
+
+def _sweep_figure(variants, ref, stats: dict, rules: dict, usage: dict, out: Path) -> str:
+    from detmaso.losses.balance import effective_agents
+
+    by_name = {v.name: v for v in variants}
+    names = list(rules["rule_m"])  # sweep order (ascending strength)
+    x = np.asarray(rules["strengths"], dtype=float)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.5, 4.4), layout="constrained")
+
+    r = stats["variants"][ref.name]["ic"]
+    ax1.axhspan(r["ci_low"], r["ci_high"], color=SERIES_2, alpha=0.10, lw=0, zorder=0)
+    ax1.axhline(r["mean"], color=SERIES_2, lw=1.6, zorder=1, label=f"{_label(ref)}, no penalty: mean {r['mean']:.3f} (shaded: 95% range)")
+    for xi, name in zip(x, names):
+        s = stats["variants"][name]["ic"]
+        vals = _seed_values(by_name[name], "ic")
+        ax1.plot([xi, xi], [s["ci_low"], s["ci_high"]], color=SERIES_1, lw=2.0, solid_capstyle="round", zorder=2)
+        ax1.plot(np.full(len(vals), xi), vals, "o", ms=5.0, color=MUTED, mec=SURFACE, mew=1.0, zorder=3)
+        ax1.plot([xi], [s["mean"]], "o", ms=8.5, color=SERIES_1, mec=SURFACE, mew=1.5, zorder=4)
+    ax1.set_xscale("log")
+    ax1.set_xlabel("Penalty strength c_bal (log scale)")
+
+    target_eff = effective_agents(rules["target"])
+    ax2.axhline(target_eff, color=INK2, lw=1.2, ls="--", zorder=1, label=f"target ({rules['target_kind']} shares): {target_eff:.2f}")
+    if usage.get(ref.name):
+        ref_eff = float(np.mean(_seed_best(usage[ref.name], "effective_agents")))
+        ax2.axhline(ref_eff, color=SERIES_2, lw=1.6, zorder=1, label=f"{_label(ref)}, no penalty: {ref_eff:.2f}")
+    for xi, name in zip(x, names):
+        eff = _seed_best(rules["diagnostics"][name], "effective_agents")
+        ax2.plot(np.full(len(eff), xi), eff, "o", ms=5.0, color=MUTED, mec=SURFACE, mew=1.0, zorder=3)
+        ax2.plot([xi], [np.mean(eff)], "o", ms=8.5, color=SERIES_1, mec=SURFACE, mew=1.5, zorder=4)
+        m = rules["rule_m"][name]
+        label = "Rule M: pass" if m["pass"] else f"usage {'ok' if m['m1'] else 'fail'}\nrouting {'ok' if m['m2'] else 'fail'}"
+        ax2.text(xi, 1.02, label, transform=ax2.get_xaxis_transform(), ha="center", va="bottom", fontsize=7.5,
+                 color=INK if m["pass"] else MUTED, fontweight="bold" if m["pass"] else "normal")  # fmt: skip
+    ax2.set_xscale("log")
+    ax2.set_ylim(0.9, max(5.1, ax2.get_ylim()[1]))
+    ax2.set_xlabel("Penalty strength c_bal (log scale)")
+    ax2.set_title("Effective agents over time, training days (restored models)", pad=28)
+    ax1.set_title("Validation IC: seed dots (gray), seed mean and 95% range (blue)", pad=28)
+    c_star = rules["rule_s"]["c_star"]
+    for ax in (ax1, ax2):
+        if c_star is not None:
+            ax.axvline(c_star, color=AXIS, lw=1.0, ls=":", zorder=0)
+        ax.grid(axis="x", visible=False)
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, fontsize=8)
+    _title(fig, "Load-balancing strength sweep" + (f" (dotted line: c* = {c_star:g})" if c_star is not None else " (no strength passed Rule M)"))
+    return _save(fig, out / "strength_sweep.png")
+
+
+def _focus(rules: dict) -> tuple[str, str]:
+    """The balanced variant shown next to the reference: c*, or the largest strength if none was chosen."""
+    if rules["c_star_variant"] is not None:
+        return rules["c_star_variant"], f"c* = {rules['rule_s']['c_star']:g}"
+    name = list(rules["rule_m"])[-1]
+    return name, f"c_bal = {rules['strengths'][-1]:g} (largest tested; no c*)"
+
+
+def _usage_figure(ref, rules: dict, usage: dict, out: Path) -> str:
+    target = np.asarray(rules["target"], dtype=float)
+    focus, focus_label = _focus(rules)
+    rows = [(f"{_label(ref)}", usage.get(ref.name), SERIES_2), (focus_label, rules["diagnostics"][focus], SERIES_1)]
+    agents = np.flatnonzero(target > 0)  # an agent with a zero target has no usage bar to clear
+    n = len(agents)
+    y = np.arange(n)[::-1]
+    fig, ax = plt.subplots(figsize=(10.5, 0.62 * n + 1.7), layout="constrained")
+    ax.axvline(1.0, color=INK2, lw=1.2, zorder=1)
+    ax.axvline(0.5, color=INK2, lw=1.0, ls="--", zorder=1)
+    floor = 1e-4
+    for k, (label, diag, color) in enumerate(rows):
+        if not diag:
+            continue
+        usage_seeds = np.asarray(_seed_best(diag, "usage"), dtype=float)[:, agents]  # [seeds, agents]
+        ratios = np.maximum(usage_seeds / target[agents], floor)
+        offset = 0.14 if k == 0 else -0.14
+        for s_ratios in ratios:
+            ax.plot(s_ratios, y + offset, "o", ms=6.5, color=color, mec=SURFACE, mew=1.2, alpha=0.9, zorder=3, label=label)
+    handles, labels = ax.get_legend_handles_labels()
+    uniq = dict(zip(labels, handles))
+    fig.legend(uniq.values(), uniq.keys(), loc="outside lower center", ncol=2)
+    ax.set_xscale("log")
+    ax.set_xlim(floor * 0.7, max(3.0, ax.get_xlim()[1]))
+    ax.set_yticks(y, [f"{AGENT_NAMES[i] if i < len(AGENT_NAMES) else i} (target {100 * target[i]:.1f}%)" for i in agents])
+    ax.grid(axis="y", visible=False)
+    ax.set_xlabel("Usage on training days / target share (log scale; one dot per seed; floored at 0.0001)")
+    ax.text(1.0, n - 0.45, " target", color=INK2, fontsize=8)
+    ax.text(0.5, n - 0.45, " Rule M bar (half the target) ", color=INK2, fontsize=8, ha="right")
+    _title(fig, "Each agent's use relative to its target share (restored models)")
+    return _save(fig, out / "usage_vs_target.png")
+
+
+def _routing_figure(ref, rules: dict, usage: dict, out: Path) -> str:
+    from matplotlib.colors import LinearSegmentedColormap
+
+    cmap = LinearSegmentedColormap.from_list("blue_ramp", BLUE_RAMP)
+    focus, focus_label = _focus(rules)
+    panels = [(f"{_label(ref)}", usage.get(ref.name)), (focus_label, rules["diagnostics"][focus])]
+    panels = [(t, d) for t, d in panels if d]
+    fig, axes = plt.subplots(1, len(panels), figsize=(6.2 * len(panels), 4.6), layout="constrained", squeeze=False)
+    for ax, (title, diag) in zip(axes[0], panels):
+        moods = [k for k, d in enumerate(diag["mood_days"]) if d > 0]  # rows only for moods that occur
+        mat = np.mean(np.asarray(_seed_best(diag, "routing"), dtype=float)[:, moods], axis=0)
+        n = mat.shape[1]
+        ax.imshow(mat, cmap=cmap, vmin=0.0, vmax=1.0)
+        names = [AGENT_NAMES[i] if i < len(AGENT_NAMES) else str(i) for i in range(n)]
+        ax.set_xticks(range(n), names, rotation=30, ha="right")
+        ax.set_yticks(range(len(moods)), [f"{names[k]} days ({diag['mood_days'][k]})" for k in moods])
+        ax.grid(False)
+        for r in range(len(moods)):
+            for i in range(n):
+                v = mat[r, i]
+                ax.text(i, r, f"{100 * v:.0f}", ha="center", va="center", fontsize=8, color=SURFACE if v > 0.55 else INK)
+        ax.set_xlabel("Agent")
+        ax.set_title(title)
+    _title(fig, "Mean scheduler weight (%) on each mood's training days: the diagonal is each mood's own agent")
+    return _save(fig, out / "routing.png")
+
+
+def rule_figures(variants, ref, stats: dict, rules: dict, usage: dict, out: Path) -> list[str]:
+    out.mkdir(parents=True, exist_ok=True)
+    with plt.rc_context(STYLE):
+        return [_sweep_figure(variants, ref, stats, rules, usage, out), _usage_figure(ref, rules, usage, out), _routing_figure(ref, rules, usage, out)]
