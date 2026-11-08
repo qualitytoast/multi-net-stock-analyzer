@@ -1,4 +1,4 @@
-"""Scheduler load-balancing penalty (TODO "Fix the scheduler collapse"; rules in docs/RULES.md).
+"""Scheduler load-balancing penalty (ROADMAP "Fix the scheduler collapse"; rules in docs/RULES.md).
 
 usage_i = the scheduler's average weight on agent i over all training days. The scheduler sees only each
 day's 12 market-state inputs, so this is one small batched forward pass (about 1 ms per step). Standard

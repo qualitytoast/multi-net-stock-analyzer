@@ -1,6 +1,6 @@
 # Fixing the scheduler collapse with a load-balancing penalty (CSI300)
 
-Run 2026-11-07 (TODO "Fix the scheduler collapse"). The rules used to judge it were written down before the first
+Run 2026-11-07 (ROADMAP "Fix the scheduler collapse"). The rules used to judge it were written down before the first
 run ([docs/RULES.md](../../../docs/RULES.md)) and applied by code. All numbers come from the **training days** or the
 **validation period** (2023-01-03 to 2024-02-28: 278 trading days, IC on 258 of them); the locked test period was
 not used. Five seeds per model; numbers are mean +- std over seeds or a 95% range. Generated tables:
@@ -90,7 +90,7 @@ here is a real gain: the placebo passed (shuffled answers give an average IC of 
 
 ![Strength sweep](figures/strength_sweep.png)
 
-### How the scheduler uses the agents (the TODO's report list)
+### How the scheduler uses the agents (the report list planned for this fix)
 
 | Model | Usage on training days, % (seed mean) | Effective agents over time, training | Own agent's weight on its mood's days, % | Weights on validation days | Per-day entropy, validation | Dead agent-days in training (all epochs) |
 |---|---|---|---|---|---|---|

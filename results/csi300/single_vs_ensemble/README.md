@@ -32,8 +32,9 @@ and mostly comes from epoch picking (0.140 at the picked epoch, 0.099 averaged o
 data the 5-agent machinery adds nothing over one plain network, and the best estimate is that it costs
 about 0.04 IC. Caveats: this is one short, falling-market period; every model's epoch was chosen on the
 same validation days; and Det-MASO's scheduler is collapsed (about one agent per day), so this tests
-Det-MASO as it trains with the paper's settings, not a working 5-specialist system (that is Step 2).
-Step 3 re-checks this under walk-forward evaluation.
+Det-MASO as it trains with the paper's settings, not a working 5-specialist system (that was the
+[scheduler-collapse fix](../scheduler_balance/README.md)). The walk-forward step in
+[TODO.md](../../../TODO.md) re-checks this.
 
 ## Results table
 

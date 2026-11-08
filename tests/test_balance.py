@@ -1,4 +1,4 @@
-"""Scheduler load-balancing penalty (TODO "Fix the scheduler collapse"; docs/RULES.md)."""
+"""Scheduler load-balancing penalty (ROADMAP "Fix the scheduler collapse"; docs/RULES.md)."""
 
 from __future__ import annotations
 

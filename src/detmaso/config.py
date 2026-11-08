@@ -104,7 +104,7 @@ class LossConfig:
     sharpe_min_points: int = 20  # A24
     sharpe_eps: float = 1e-8
     sharpe_window: int | None = None  # A24: None = expanding within the epoch (T_train = #train dates)
-    # Scheduler load balancing (TODO "Fix the scheduler collapse"; docs/RULES.md): the loss adds
+    # Scheduler load balancing (ROADMAP "Fix the scheduler collapse"; docs/RULES.md): the loss adds
     # c_bal * KL(target || usage), usage = the scheduler's mean weight per agent over all training days.
     c_bal: float = post_paper(0.0)
     # "uniform" = equal shares; "regime" = each regime's share of the training days.

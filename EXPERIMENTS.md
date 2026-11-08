@@ -28,7 +28,7 @@ Common to every entry unless stated otherwise:
 | E5 | 2026-11-06 | 7 | Step 1: Det-MASO without the diversity penalty (c_div = 0) | `configs/csi300_nodiv.yaml` (`95dc0657f33ab915`) | `nodiv` | 0.088 +- 0.058 | dropped: no detectable gain, unstable across seeds |
 | E6 | 2026-11-06 | 8 | Step 1: single network, one-agent size (main baseline) | `configs/csi300_single_mlp.yaml` (`ef0560a807c0b155`) | `single_mlp` | 0.103 +- 0.002 | kept as the reference baseline |
 | E7 | 2026-11-06 | 9 | Step 1: single network, Det-MASO size (capacity check) | `configs/csi300_single_mlp_wide.yaml` (`6964fbf8c1ad4259`) | `single_mlp_wide` | 0.101 +- 0.007 | dropped: same as E6 |
-| E8 | 2026-11-06 | 10 | Step 1: single network + 12 market-mood inputs | `configs/csi300_single_mlp_state.yaml` (`d38afb377e8a652b`) | `single_mlp_state` | 0.140 +- 0.014 | kept as a baseline to re-check under walk-forward (Step 3) |
+| E8 | 2026-11-06 | 10 | Step 1: single network + 12 market-mood inputs | `configs/csi300_single_mlp_state.yaml` (`d38afb377e8a652b`) | `single_mlp_state` | 0.140 +- 0.014 | kept as a baseline to re-check under walk-forward (TODO.md) |
 | E9 | 2026-11-07 | 6 (rerun) | Scheduler balance: retrain the paper config with the new code (regression check) | `configs/csi300.yaml` (`d2a65e9a6a237d2c`) | `paper_rerun2` | identical to E3 | check passed; not a candidate |
 | E10 | 2026-11-07 | - (placebo) | Scheduler balance: the whole procedure on shuffled answers (Rule P) | `configs/scheduler_balance/placebo/` | `placebo_*` (pilot + 8 groups) | average +0.005 [-0.006, +0.016] | check passed |
 | E11 | 2026-11-07 | - (training only) | Scheduler balance: strength pilot, validation off (Rule G) | `configs/scheduler_balance/pilot/` | `bal_pilot_*` | not evaluated | set the grid 0.03-10 |
@@ -102,7 +102,7 @@ changes no verdict.
 
 - **Config:** `configs/csi300_single_mlp_state.yaml` (`d38afb377e8a652b`): E6 with `model.market_state_input: true` (46 inputs); 5,633 weights.
 - **Results (validation):** IC 0.140 +- 0.014, ICIR 0.73 +- 0.09, Sharpe 0.69 +- 0.26, AR 10.6% +- 4.7%, MDD 20.6% +- 3.3%. Advantage on IC -0.078 [-0.144, -0.017]: the single network is better under the fixed rule; Sharpe -0.67 [-2.22, +0.86]: no detectable difference. Against E6: IC +0.038 [-0.025, +0.101], Sharpe +0.02 [-1.12, +1.34], no detectable difference. Validation IC averaged over all epochs 0.099 (picking the epoch adds +0.042, the most of any single network).
-- **Kept / dropped:** kept as a baseline to re-check under walk-forward (Step 3); its extra edge over E6 is not established.
+- **Kept / dropped:** kept as a baseline to re-check under walk-forward (TODO.md); its extra edge over E6 is not established.
 
 ## Scheduler collapse fix (2026-11-07, E9-E17)
 

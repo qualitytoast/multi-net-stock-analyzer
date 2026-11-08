@@ -104,7 +104,7 @@ try numbers from [results/csi300/trials.csv](results/csi300/trials.csv), validat
 # Python 3.12 is required (pyqlib 0.9.7 has no 3.13 wheels); uv installs it for you.
 uv sync
 ./scripts/get_cn_data.sh        # pinned community Qlib CN dataset, verified by sha256 (about 570 MB)
-uv run pytest                   # 160 tests; data-dependent ones skip until `prepare` has run
+uv run pytest                   # 161 tests; data-dependent ones skip until `prepare` has run
 ```
 
 ## Run
@@ -132,14 +132,16 @@ uv run detmaso compare  --runs configs/csi300.yaml:final configs/csi300_single_m
 `compare` reports each model's metrics (mean +- std over seeds) and the reference's advantage over each
 variant with a 95% range from a paired block bootstrap (validation days redrawn in 20-day blocks shared by
 all models, seeds redrawn per model from the model's own random stream, so a model's range does not depend on
-which other models are compared), plus an early-stopping check. It refuses the test split.
+which other models are compared), plus an early-stopping check. It refuses the test split and any run group
+not evaluated on all its configured seeds.
 
 Guards against fooling ourselves (CLAUDE.md "Guards", rules in [docs/RULES.md](docs/RULES.md)):
 
 - **Try ledger.** `train` registers every new configuration in `results/<market>/trials.csv` before training
-  starts (aborted runs count too) and `evaluate --split valid` adds its validation metrics. `compare` then reports
-  each model's try number, a 95% range for its IC and Sharpe, a deflated Sharpe ratio (on the daily excess return)
-  and a deflated IC: the probability that the value beats the best of that many tries of pure luck.
+  starts (aborted runs count too) and `evaluate --split valid` over all configured seeds adds its validation
+  metrics (a subset of seeds is not recorded). `compare` then reports each model's try number, a 95% range for
+  its IC and Sharpe, a deflated Sharpe ratio (on the daily excess return) and a deflated IC: the probability that
+  the value beats the best of that many tries of pure luck.
 - **Rules as code.** `compare --rule scheduler_balance` applies a change's pre-written rules mechanically and writes
   their outcome into the comparison.
 - **Placebo.** A config with `placebo: {shuffle_seed: 0}` trains and evaluates on shuffled answers (each 20-day
