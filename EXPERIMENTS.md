@@ -69,7 +69,10 @@ Write-up, figures and the answer: [results/csi300/single_vs_ensemble/README.md](
 All five run groups: 5 seeds, the paper's training recipe (E3), validation only. Comparison statistics:
 paired block bootstrap (20-day blocks shared across models, seeds redrawn per model, 10,000 draws),
 with the decision rule fixed before the runs (Step 1 decision D3). "Advantage" below = Det-MASO (E3) minus
-the model; the range is the 95% bootstrap range.
+the model; the range is the 95% bootstrap range. These ranges come from the earlier resampling method, in which
+every model's seeds were redrawn from one shared random stream; `detmaso compare` now redraws each model's seeds
+from a stream of its own (docs/RULES.md, "Rule changes", 2026-11-07), which moves the ranges by about 0.01 and
+changes no verdict.
 
 ### E4: `paper_rerun`, regression check
 

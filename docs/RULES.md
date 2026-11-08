@@ -147,7 +147,8 @@ kept the rules as written (no rule change), so the change was dropped (EXPERIMEN
     Unchanged: the shared 20-day day blocks, 10,000 draws, RNG seed 0, and the 95%-range thresholds.
   - Reason: Rule K (fixed 2026-11-07, before its runs) needs each model's random stream independent of row
     order, so that the same pair of models gets the same range in every report.
-  - Made after Step 1's results were seen. Effect on the two Step 1 comparisons that the scheduler-balance
-    report repeats: Det-MASO minus the single network, IC [-0.0878, +0.0114] becomes [-0.0882, +0.0102];
-    minus the single network with mood inputs, [-0.1435, -0.0166] becomes [-0.1423, -0.0177]. Verdicts are
-    unchanged.
+  - Made after Step 1's results were seen. Every Step 1 range moves (IC, ICIR and Sharpe, in both Step 1
+    reports), by about 0.01, and no verdict changes. The Step 1 write-ups keep the ranges from the earlier
+    method and say so. Two examples, from the scheduler-balance report, which repeats two Step 1 comparisons:
+    Det-MASO minus the single network, IC [-0.0878, +0.0114] becomes [-0.0882, +0.0102]; minus the single
+    network with mood inputs, [-0.1435, -0.0166] becomes [-0.1423, -0.0177].

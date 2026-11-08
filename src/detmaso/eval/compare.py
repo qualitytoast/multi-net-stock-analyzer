@@ -1,8 +1,8 @@
 """Side-by-side comparison of trained variants on the validation period (Step 1 in ROADMAP.md; Step 1 decision D3).
 
-Each run group must already be evaluated with ``detmaso evaluate --split valid``, which saves
-runs/<market>/<tag>/series_valid.parquet (per seed and decision date: daily IC, portfolio and
-benchmark returns, scheduler weights) and results_valid.json. The test period is never used.
+Each run group must already be evaluated on all its configured seeds with ``detmaso evaluate --split
+valid``, which saves runs/<market>/<tag>/series_valid.parquet (per seed and decision date: daily IC,
+portfolio and benchmark returns, scheduler weights) and results_valid.json. The test period is never used.
 
 Statistics
 - Per seed: IC, ICIR, Sharpe, max drawdown, annual return and excess-return metrics, recomputed from
@@ -108,6 +108,9 @@ def load_variant(cfg: Config, config_path: str, tag: str, split: str = "valid") 
     seeds = [int(p["seed"]) for p in report["per_seed"]]
     if sorted(frames) != sorted(seeds):
         raise CompareError(f"run group '{tag}': series seeds {sorted(frames)} differ from report seeds {seeds}")
+    if sorted(seeds) != sorted(cfg.train.seeds):
+        raise CompareError(f"run group '{tag}' was evaluated on seeds {sorted(seeds)}, not its configured seeds {sorted(cfg.train.seeds)}; "
+                           f"run `detmaso evaluate --split {split}` again with all of them")  # fmt: skip
     first = frames[seeds[0]]
     for s in seeds:
         if not first["decision_date"].equals(frames[s]["decision_date"]) or not first["in_ic"].equals(frames[s]["in_ic"]):

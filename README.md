@@ -151,7 +151,7 @@ Guards against fooling ourselves (CLAUDE.md "Guards", rules in [docs/RULES.md](d
 ```bash
 # training-day scheduler usage, routing by mood and the Rule M checks (never touches validation)
 uv run detmaso usage   --runs configs/scheduler_balance/bal_c1e0.yaml:bal_c1e0 [--grid] [--out DIR]
-# a sweep judged by its rules (the try ledger is read from results/csi300/trials.csv by default)
+# a sweep judged by its rules (the try ledger is read from results/csi300/trials.csv)
 uv run detmaso compare --rule scheduler_balance --reference final --out results/csi300/scheduler_balance \
                        --runs configs/csi300.yaml:final configs/scheduler_balance/bal_c3e-2.yaml:bal_c3e-2 ...
 ```

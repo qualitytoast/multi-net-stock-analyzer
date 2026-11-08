@@ -6,6 +6,12 @@ not used. Five training seeds per model; numbers are mean +- std over seeds. Ful
 [comparison.md](comparison.md); machine-readable: [comparison.json](comparison.json); run log:
 [EXPERIMENTS.md](../../../EXPERIMENTS.md) (E4-E8).
 
+Note (2026-11-07): the 95% ranges here, and in comparison.md and
+[state_vs_plain/comparison.md](state_vs_plain/comparison.md), come from the earlier resampling method, in
+which every model's seeds were redrawn from one shared random stream. `detmaso compare` now redraws each
+model's seeds from a stream of its own ([docs/RULES.md](../../../docs/RULES.md), "Rule changes"); that moves
+the ranges by about 0.01 and changes no verdict.
+
 ## Answer: does Det-MASO beat a single network on our data?
 
 **No.** A single network the size of one Det-MASO agent, trained with only the IC and Sharpe loss

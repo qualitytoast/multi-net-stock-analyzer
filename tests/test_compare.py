@@ -135,6 +135,11 @@ def test_load_variant_refuses_foreign_or_unevaluated_run_groups(tmp_path):
         load_variant(cfg, "x.yaml", "fresh")
     with pytest.raises(CompareError, match="validation period only"):
         load_variant(cfg, "x.yaml", "fresh", split="test")
+    dates = pd.bdate_range("2021-01-04", periods=3)
+    pd.DataFrame({"seed": 0, "decision_date": dates}).to_parquet(tmp_path / "fresh" / "series_valid.parquet", index=False)
+    (tmp_path / "fresh" / "results_valid.json").write_text(json.dumps({"per_seed": [{"seed": 0}]}))
+    with pytest.raises(CompareError, match=r"evaluated on seeds \[0\], not its configured seeds \[0, 1, 2, 3, 4\]"):
+        load_variant(cfg, "x.yaml", "fresh")
 
 
 def test_compare_command_refuses_the_test_split(tmp_path):
@@ -152,9 +157,9 @@ def test_run_compare_end_to_end_on_synthetic_runs(tmp_path):
 
     panel, splits = synthetic_panel_and_splits()
     runs = tmp_path / "runs"
-    paper = synthetic_config(runs, train={"max_epochs": 3}, model={"dtype": "float64"})
+    paper = synthetic_config(runs, train={"max_epochs": 3, "seeds": (0, 1)}, model={"dtype": "float64"})
     single = synthetic_config(
-        runs, variant="single_test", train={"max_epochs": 3},
+        runs, variant="single_test", train={"max_epochs": 3, "seeds": (0, 1)},
         model={"dtype": "float64", "kind": "single_mlp"}, loss={"c_div": 0.0, "c_ent": 0.0},
     )  # fmt: skip
     for cfg, tag in ((paper, "ref"), (single, "single")):
