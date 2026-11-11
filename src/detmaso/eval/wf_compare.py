@@ -15,7 +15,7 @@ import numpy as np
 from detmaso.config import Config
 from detmaso.eval import guard
 from detmaso.eval.walkforward import run_deflation, run_summary
-from detmaso.eval.wf_stats import N_BOOT, WFError, WFRun, bootstrap, load_wf_run, metric_values, pct, pct_range, seed_metrics, write_json
+from detmaso.eval.wf_stats import AFTER_COSTS, N_BOOT, WFError, WFRun, bootstrap, load_wf_run, metric_values, pct, pct_range, seed_metrics, write_json
 from detmaso.mdtable import md_table
 
 RULES = ("keep", "placebo")
@@ -47,8 +47,7 @@ def advantage(v: WFRun, ref: WFRun, sms: dict, boot: dict) -> dict:
         lo, hi = pct_range(d_year[i])
         yearly[y] = {"gain": float(gv[:, i].mean() - gr[:, i].mean()), "low": lo, "high": hi}
     avg_lo, avg_hi = pct_range(d_year.mean(axis=0))
-    key = "realistic_" + ("blocked" if ref.cfg.trading.block_trades else "unblocked")
-    sv, sr = metric_values(sms[v.name]["joined"][key], "sharpe"), metric_values(sms[ref.name]["joined"][key], "sharpe")
+    sv, sr = metric_values(sms[v.name]["joined"][AFTER_COSTS], "sharpe"), metric_values(sms[ref.name]["joined"][AFTER_COSTS], "sharpe")
     s_lo, s_hi = pct_range(boot[v.name]["sharpe_net"] - boot[ref.name]["sharpe_net"])
     return {
         "yearly": yearly,
@@ -70,9 +69,9 @@ def run_wf_compare(
     by_tag = {r.tag: r for r in wruns}
     if len(by_tag) != len(wruns):
         raise WFError("run group tags must be unique")
-    ref = by_tag[reference] if reference else wruns[0]
     if reference and reference not in by_tag:
         raise WFError(f"reference '{reference}' is not one of the compared run groups {list(by_tag)}")
+    ref = by_tag[reference] if reference else wruns[0]
     boot = bootstrap(wruns, n_boot=n_boot)
     sms = {r.name: seed_metrics(r) for r in wruns}
     summaries = {r.name: run_summary(r, sms[r.name], boot[r.name]) for r in wruns}
@@ -132,7 +131,7 @@ def _markdown(runs: list[WFRun], ref: WFRun, summaries: dict, adv: dict, deflate
         f"- Reference: `{ref.name}` (run group `{ref.tag}`). Gain = variant minus reference, so a positive number means the variant did better.",
         f"- {len(ref.years)} test years ({ref.years[0]}-{ref.years[-1]}), {ref.n_days} test days from {ref.start.date()} to {ref.end.date()}; seeds {ref.seeds}. The locked test period is never used.",
         f"- 95% ranges: {n_boot:,} draws; days redrawn in circular 20-day blocks within each test year (shared by every run group), seeds redrawn per run group from its own random stream (docs/RULES.md, Rule WK).",
-        "- \"After costs\" = realistic costs" + (" with blocked trades (Rule WT)." if ref.cfg.trading.block_trades else " (Rule WT)."),
+        "- \"After costs\" = realistic costs with blocked trades (Rule WT).",
     ]
     if ref.cfg.is_placebo:
         lines.append(f"- **Placebo**: every run group was trained and evaluated on shuffled answers (seed {ref.cfg.placebo.shuffle_seed}); there is nothing real to find.")

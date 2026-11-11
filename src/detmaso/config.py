@@ -216,7 +216,6 @@ class TradingConfig:
     fee_bps: float = 3.0  # broker commission + exchange, management and transfer fees, each side
     slippage_bps: float = 5.0  # each side
     stamp_duty_bps: tuple[tuple[str, float], ...] = (("2008-09-19", 10.0), ("2023-08-28", 5.0))  # sells only
-    block_trades: bool = True  # realistic numbers respect price limits and suspensions
 
     def __post_init__(self):
         object.__setattr__(self, "flat_bps", tuple(float(x) for x in self.flat_bps))

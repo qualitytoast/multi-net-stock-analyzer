@@ -203,8 +203,9 @@ uv run detmaso compare  --split walkforward --reference wf --out results/csi300/
   range above 0, at least 8 of 11 years won (or the targeted form), at least 4 of 5 seeds gaining, the next setting
   over also gaining, and the after-cost Sharpe not detectably worse. `--rule placebo` applies Rule WP to two placebo
   run groups.
-- A walk-forward configuration is one try in the ledger; each fold and seed is a job (`<tag>:Y<year>:s<seed>`), and
-  `evaluate --split walkforward` adds its walk-forward metrics.
+- A walk-forward configuration is one try in the ledger; each fold and seed is a job (`<tag>:Y<year>:s<seed>`,
+  marked `aborted: <reason>` when it fails or the run is interrupted, and retrained by the next `train`), and
+  `evaluate --split walkforward` adds its walk-forward metrics before it computes the report's deflated numbers.
 
 The test period (2024-03-01 to 2026-03-01) is locked. Evaluating it needs `--unlock-test` and an
 explicit `--tag`, always uses all configured seeds, and is recorded in the git-tracked

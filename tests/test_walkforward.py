@@ -192,6 +192,57 @@ def test_training_resumes_and_parallel_jobs_match_serial(trained, tmp_path):
         assert all(torch.equal(a[k], b[k]) for k in a)
 
 
+def test_interrupted_jobs_are_marked_aborted_and_resume(trained, tmp_path):
+    """CLAUDE.md, "Count tries": aborted runs stay visible in the try ledger, as `aborted: <reason>`."""
+    import detmaso.train.trainer as trainer
+    from detmaso.walkforward.runner import train_walkforward
+
+    cfg, trials = trained["cfg"], tmp_path / "trials.csv"
+    real_train_seed, calls = trainer.train_seed, []
+
+    def interrupted_on_the_second_job(*args, **kwargs):
+        calls.append(args)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        return real_train_seed(*args, **kwargs)
+
+    def statuses() -> dict:
+        return json.loads(ledger.read(trials).set_index("config_hash").loc[cfg.hash()]["seed_status"])
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(trainer, "train_seed", interrupted_on_the_second_job)
+        with pytest.raises(KeyboardInterrupt):
+            train_walkforward(cfg, "wf.yaml", "stop", [0, 1], jobs=1, ledger_path=trials)
+    stopped = "aborted: KeyboardInterrupt"
+    assert statuses() == {"stop:Y2018:s0": "trained", "stop:Y2018:s1": stopped, "stop:Y2019:s0": stopped, "stop:Y2019:s1": stopped}
+    assert train_walkforward(cfg, "wf.yaml", "stop", [0, 1], years=[2018], jobs=1, ledger_path=trials) == {"Y2018:s1": "trained"}
+    assert statuses() == {"stop:Y2018:s0": "trained", "stop:Y2018:s1": "trained", "stop:Y2019:s0": stopped, "stop:Y2019:s1": stopped}
+
+
+def test_a_run_deflates_with_its_own_walkforward_metrics_in_the_ledger(trained, tmp_path):
+    """docs/RULES.md, "Deflated metrics for walk-forward results": the spread comes from the walk-forward tries once
+    3 have metrics. The third try's own report already counts itself, as a later `compare` does."""
+    from detmaso.eval.walkforward import evaluate_walkforward
+    from detmaso.eval.wf_stats import RESULTS_FILE
+    from detmaso.walkforward.runner import train_walkforward
+
+    cfg, trials = trained["cfg"], tmp_path / "trials.csv"
+    earlier = {"a": (0.010, 0.02), "b": (0.030, 0.05)}  # two earlier tries: walk-forward IC, daily after-cost excess Sharpe
+    for epochs, (name, (ic, sr)) in zip((10, 11), earlier.items()):
+        other = dataclasses.replace(cfg, variant=name, train=dataclasses.replace(cfg.train, max_epochs=epochs))
+        ledger.register(trials, other, f"{name}.yaml", name, [])
+        ledger.record_wf_metrics(trials, other, {"wf_years": 2, "wf_ic": ic, "wf_ic_sd_seeds": 0.0, "wf_sharpe_net": 1.0, "wf_excess_sr_daily_net": sr})
+    third = dataclasses.replace(cfg, variant="wf_third", train=dataclasses.replace(cfg.train, max_epochs=4))
+    train_walkforward(third, "third.yaml", "third", [0, 1], jobs=1, ledger_path=trials)
+    evaluate_walkforward(third, "third.yaml", "third", [0, 1], ledger_path=trials)
+    own = ledger.read(trials).set_index("config_hash").loc[third.hash()]
+    deflated = json.loads((third.run_path / "third" / RESULTS_FILE).read_text())["deflated"]
+    assert deflated["try_no"] == 3 and deflated["n_tries"] == 3 and deflated["source"] == "the 3 walk-forward tries"
+    assert deflated["ic_sd"] == pytest.approx(np.std([0.010, 0.030, own["wf_ic"]], ddof=1))
+    assert deflated["sr_sd"] == pytest.approx(np.std([0.02, 0.05, own["wf_excess_sr_daily_net"]], ddof=1))
+    assert "Try #3 of 3 counted tries" in (third.run_path / "third" / "report_wf.md").read_text()
+
+
 def test_evaluation_series_reproduce_the_paper_backtest_and_purge_ic(trained):
     from detmaso.eval.wf_stats import SERIES_FILE, load_wf_run
 
@@ -208,7 +259,8 @@ def test_evaluation_series_reproduce_the_paper_backtest_and_purge_ic(trained):
     assert "Try #1 of" in report and "Deflated Sharpe" in report and "## By test year" in report
 
 
-def test_compare_applies_the_keep_rule_and_refuses_mixing(trained):
+def test_compare_reads_evaluated_groups_and_refuses_mixing(trained):
+    """The keep and placebo verdicts themselves are checked on planted run groups in tests/test_keep_rule.py."""
     from detmaso.eval.wf_compare import run_wf_compare
     from detmaso.eval.wf_stats import WFError
 
@@ -217,7 +269,8 @@ def test_compare_applies_the_keep_rule_and_refuses_mixing(trained):
     runs = [(cfg, "wf.yaml", "wf"), (single, "single.yaml", "single")]
     run_wf_compare(runs, "wf", out, rule="keep", candidate="single", no_setting=True, ledger_path=trained["trials"], n_boot=200)
     payload = json.loads((out / "comparison.json").read_text())
-    assert payload["rules"]["verdict"] in ("improvement", "no improvement", "worse")
+    assert (payload["rules"]["candidate"], payload["rules"]["reference"]) == ("wf_single", "wf_test")
+    assert {name: d["try_no"] for name, d in payload["deflated"].items()} == {"wf_test": 1, "wf_single": 2}  # in training order
     assert set(payload["advantage"]["wf_single"]["yearly"]) == {"2018", "2019"}
     with pytest.raises(WFError, match="needs --neighbor"):
         run_wf_compare(runs, "wf", out, rule="keep", candidate="single", ledger_path=None, n_boot=50)

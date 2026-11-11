@@ -25,7 +25,8 @@ from detmaso.eval.trading import (
     code_space_growth, cost_settings, long_short, panel_growth, simulate_blocked, simulate_unblocked, trade_flags,
 )  # fmt: skip
 from detmaso.eval.wf_stats import (
-    RESULTS_FILE, SERIES_FILE, WFRun, bootstrap, frame_to_run, mean_std, metric_values, pct, pct_range, seed_metrics, write_json,
+    AFTER_COSTS, RESULTS_FILE, SERIES_FILE, WFRun, bootstrap, frame_to_run, mean_std, metric_values, pct, pct_range, seed_metrics,
+    write_json,
 )  # fmt: skip
 from detmaso.losses.stats import daily_spearman
 from detmaso.mdtable import md_table
@@ -137,6 +138,13 @@ def evaluate_walkforward(cfg: Config, config_path: str, tag: str, seeds: list[in
     complete = run.years == cfg.walkforward.years and run.seeds == sorted(cfg.train.seeds)
     sm = seed_metrics(run)
     boot = bootstrap([run])[run.name]
+    if complete and ledger_path is not None:
+        if not ledger.read(ledger_path)["config_hash"].eq(cfg.hash()).any():
+            raise SystemExit(f"config {cfg.hash()} is not in the try ledger; it must be registered by `train`")
+        ledger.record_wf_metrics(ledger_path, cfg, ledger_wf_metrics(run, sm))
+        log.info("walk-forward metrics recorded in the try ledger %s", ledger_path)
+    elif not complete:
+        log.warning("evaluated folds %s and seeds %s only: not recorded in the try ledger, and `compare` will refuse this group", run.years, run.seeds)
     deflated = run_deflation(run, sm, boot, ledger_path) if (ledger_path is not None and ledger_path.exists() and not cfg.is_placebo) else None
     from detmaso.eval.wf_plots import run_figures
 
@@ -145,13 +153,6 @@ def evaluate_walkforward(cfg: Config, config_path: str, tag: str, seeds: list[in
     write_json(run_dir / RESULTS_FILE, {**info, "complete": complete, "summary": summary, "deflated": deflated,
                                         "config_hash": cfg.hash(), "data_hash": cfg.data_hash(), "seeds": run.seeds, "years": run.years})  # fmt: skip
     (run_dir / "report_wf.md").write_text(run_report(run, sm, boot, summary, deflated, complete, figs))
-    if complete and ledger_path is not None:
-        if not ledger.read(ledger_path)["config_hash"].eq(cfg.hash()).any():
-            raise SystemExit(f"config {cfg.hash()} is not in the try ledger; it must be registered by `train`")
-        ledger.record_wf_metrics(ledger_path, cfg, ledger_wf_metrics(run, sm))
-        log.info("walk-forward metrics recorded in the try ledger %s", ledger_path)
-    elif not complete:
-        log.warning("evaluated folds %s and seeds %s only: not recorded in the try ledger, and `compare` will refuse this group", run.years, run.seeds)
     return run_dir / "report_wf.md"
 
 
@@ -163,13 +164,9 @@ def ledger_wf_metrics(run: WFRun, sm: dict) -> dict:
         "wf_years": len(run.years),
         "wf_ic": float(sm["ic_avg"].mean()),
         "wf_ic_sd_seeds": float(sm["ic_avg"].std(ddof=1)) if len(sm["ic_avg"]) > 1 else 0.0,
-        "wf_sharpe_net": float(metric_values(sm["joined"][_realistic_key(run)], "sharpe").mean()),
+        "wf_sharpe_net": float(metric_values(sm["joined"][AFTER_COSTS], "sharpe").mean()),
         "wf_excess_sr_daily_net": guard.excess_sharpe_inputs(net, bench)["sr"],
     }
-
-
-def _realistic_key(run: WFRun) -> str:
-    return "realistic_" + ("blocked" if run.cfg.trading.block_trades else "unblocked")
 
 
 def run_deflation(run: WFRun, sm: dict, boot: dict, ledger_path: Path) -> dict:
@@ -187,9 +184,9 @@ def run_summary(run: WFRun, sm: dict, boot: dict) -> dict:
     out = {
         "ic_avg": {**mean_std(sm["ic_avg"]), "range": pct_range(boot["ic_avg"]), "se": float(np.std(boot["ic_avg"], ddof=1))},
         "sharpe_gross": {**mean_std(metric_values(j["gross_unblocked"], "sharpe")), "range": pct_range(boot["sharpe_gross"])},
-        "sharpe_net": {**mean_std(metric_values(j[_realistic_key(run)], "sharpe")), "range": pct_range(boot["sharpe_net"])},
-        "ar_net": mean_std(metric_values(j[_realistic_key(run)], "ar")),
-        "mdd_net": mean_std(metric_values(j[_realistic_key(run)], "mdd")),
+        "sharpe_net": {**mean_std(metric_values(j[AFTER_COSTS], "sharpe")), "range": pct_range(boot["sharpe_net"])},
+        "ar_net": mean_std(metric_values(j[AFTER_COSTS], "ar")),
+        "mdd_net": mean_std(metric_values(j[AFTER_COSTS], "mdd")),
         "excess_ar_net": mean_std(metric_values(j["excess_realistic"], "ar")),
         "turnover": mean_std(sm["turnover"]),
         "turnover_blk": mean_std(sm["turnover_blk"]),
@@ -235,8 +232,8 @@ def run_report(run: WFRun, sm: dict, boot: dict, s: dict, deflated: dict | None,
         "- Every number is the mean +- std over seeds; 95% ranges come from the paired, stratified 20-day block resampling (Rule WK).",
         f"- Costs (Rule WT): flat {', '.join(f'{b:g}' for b in tc.flat_bps)} bps per buy and per sell, and realistic: buys "
         f"{tc.fee_bps + tc.slippage_bps:g} bps, sells {tc.fee_bps + tc.slippage_bps:g} bps + stamp duty "
-        f"({'; '.join(f'{b:g} bps from {d}' for d, b in tc.stamp_duty_bps)}). \"After costs\" = realistic costs"
-        + (" with blocked trades (price limits, suspensions)." if tc.block_trades else ", without blocked trades."),
+        f"({'; '.join(f'{b:g} bps from {d}' for d, b in tc.stamp_duty_bps)}). \"After costs\" = realistic costs "
+        "with blocked trades (price limits, suspensions).",
     ]
     if not complete:
         lines.append("- **Incomplete**: not every fold and configured seed was evaluated. Not recorded in the try ledger; `compare` refuses it.")

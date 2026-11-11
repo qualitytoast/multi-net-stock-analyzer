@@ -29,6 +29,7 @@ N_BOOT, BLOCK, RNG_SEED, CHUNK = 10_000, 20, 0, 500
 SERIES_FILE, RESULTS_FILE = "series_wf.parquet", "results_wf.json"
 SERIES_COLUMNS = ("ic", "port", "bench", "ls", "buy", "sell", "port_blk", "buy_blk", "sell_blk", "cash_blk", "blocked_buys", "blocked_sells")
 REALISTIC = CostSetting("realistic", None)
+AFTER_COSTS = "realistic_blocked"  # seed_metrics()["joined"] key of the headline after-cost metrics (Rule WT)
 
 
 class WFError(RuntimeError):
@@ -64,8 +65,8 @@ class WFRun:
         return net_returns(c[f"port{sfx}"], c[f"buy{sfx}"], c[f"sell{sfx}"], buy_rate, sell_rate)
 
     def realistic(self, year: int) -> np.ndarray:
-        """The headline after-cost return: realistic costs, with blocked trades when trading.block_trades."""
-        return self.net(year, REALISTIC, self.cfg.trading.block_trades)
+        """The headline after-cost return: realistic costs, with blocked trades (Rule WT)."""
+        return self.net(year, REALISTIC, True)
 
     def stitched(self, fn) -> np.ndarray:
         """[S, all test days]: fn(year) joined over the folds in order."""
@@ -157,7 +158,7 @@ def seed_metrics(run: WFRun) -> dict:
         for st in settings:
             x = run.stitched(lambda y: run.net(y, st, blocked))
             out["joined"][f"{st.name}_{mode}"] = pm(x, run.start, run.end)
-            if st.name == "realistic" and blocked == run.cfg.trading.block_trades:
+            if f"{st.name}_{mode}" == AFTER_COSTS:
                 out["joined"]["excess_realistic"] = pm(x - bench, run.start, run.end)
     for y in run.years:
         s0, s1 = run.dec[y][0], run.ret[y][-1]

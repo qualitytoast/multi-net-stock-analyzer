@@ -138,17 +138,23 @@ def train_walkforward(cfg: Config, config_path: str, tag: str, seeds: list[int],
         extra = f"best epoch {summary['best_epoch']} of {summary['epochs_run']}" if summary else status
         log.info("fold %d seed %d: %s (%d/%d trained)", year, seed, extra, done, len(todo))
 
-    if todo:
-        if jobs <= 1:
-            _init_worker(cfg)
-            for year, seed in todo:
-                record(*_run_job(tag, year, seed))
-        else:
-            ctx = multiprocessing.get_context("spawn")
-            with ProcessPoolExecutor(max_workers=min(jobs, len(todo)), mp_context=ctx, initializer=_init_worker, initargs=(cfg,)) as pool:
-                futures = [pool.submit(_run_job, tag, year, seed) for year, seed in todo]
-                for fut in as_completed(futures):
-                    record(*fut.result())
+    try:
+        if todo:
+            if jobs <= 1:
+                _init_worker(cfg)
+                for year, seed in todo:
+                    record(*_run_job(tag, year, seed))
+            else:
+                ctx = multiprocessing.get_context("spawn")
+                with ProcessPoolExecutor(max_workers=min(jobs, len(todo)), mp_context=ctx, initializer=_init_worker, initargs=(cfg,)) as pool:
+                    futures = [pool.submit(_run_job, tag, year, seed) for year, seed in todo]
+                    for fut in as_completed(futures):
+                        record(*fut.result())
+    except BaseException as exc:
+        for year, seed in todo:
+            if job_key(year, seed) not in statuses:
+                record(year, seed, "trained" if job_done(cfg, tag, year, seed) else f"aborted: {type(exc).__name__}", None)
+        raise
     failed = {k: v for k, v in statuses.items() if v != "trained"}
     if failed:
         raise SystemExit(f"{len(failed)} walk-forward jobs failed: {failed}")
