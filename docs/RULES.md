@@ -19,9 +19,12 @@ Walk-forward IC is the main metric. A change counts as an improvement only if al
   must instead win in most of those years and be no worse (95% range not entirely below 0) in the rest. Say
   which years it targets before running;
 - at least 4 of 5 seeds show a gain on average;
-- if the change has a tunable setting, the next setting over also shows a gain.
+- if the change has a tunable setting, the next setting over also shows a gain;
+- (added 2026-11-08 with the owner's OK, before any walk-forward result; see "Rule changes") its after-cost Sharpe
+  gain has a 95% range that is not entirely below 0.
 
-Until walk-forward exists, a change can only be "kept for re-check" or "dropped".
+Until walk-forward exists, a change can only be "kept for re-check" or "dropped". The exact walk-forward
+definitions are in "Walk-forward evaluation" below (Rule WK).
 
 ## Single network vs Det-MASO (fixed 2026-11-06, applied in Step 1)
 
@@ -126,6 +129,111 @@ If either check fails: stop, report, propose a fix, and ask before continuing.
 Rule P passed; Rule G set the grid below; Rule S stopped with "all agents used, but no specialists". The owner
 kept the rules as written (no rule change), so the change was dropped (EXPERIMENTS E12-E17).
 
+## Walk-forward evaluation (fixed 2026-11-08, before any walk-forward run)
+
+Plan: `make-a-plan-for-melodic-ocean.md` (approved 2026-11-08), decisions D1-D8 all "a". These rules fix how
+every later change is judged. They are implemented in code (`detmaso.walkforward`, `detmaso.eval.trading`,
+`detmaso.eval.wf_compare`, `detmaso.eval.guard.keep_rule` and `rule_wp`).
+
+### Rule WL: the fold layout
+
+- History starts 2008-01-01 (data loaded from 2007-01-01, so the 120-day features and market state have their
+  warm-up). Configs: `configs/walkforward/`, run folder `runs/csi300_wf` (the paper config's data is untouched).
+- 11 folds, named by their test year Y = 2013 ... 2023:
+  - training: every model date from the history start to the end of year Y-2;
+  - early stopping: calendar year Y-1;
+  - test window: calendar year Y; the last fold's runs from 2023-01-01 to 2024-02-28.
+- Purges (20 trading days, the answer horizon): the last 20 training dates are not trained on; IC in the
+  early-stopping year and in the test window uses only dates whose 20-day answers end inside that window. The
+  portfolio uses every test date, so the 11 test windows join into one continuous daily series.
+- Every fold trains from scratch with the paper recipe (one step per date, cosine learning rate, early stopping
+  on the 3-epoch smoothed early-stopping-year IC with patience 8, best epoch restored), seeds 0-4. "Seed s" means
+  the 11 fold models trained with seed s. No second training after early stopping.
+- Moods per fold: the K-means moods and the scheduler's input scaling are refit on every model date before the
+  fold's test window and named by the fixed rule A16. Each fold's report shows how far the moods moved.
+- The locked test period is never used: code refuses any fold whose test window, answers or next-day returns
+  reach 2024-03-01.
+
+### Rule WT: trading, costs and turnover
+
+- Portfolio: the paper's top 10% of the eligible stocks by score, equal weights, rebalanced at every close.
+- Turnover: each day's buys and sells as shares of the portfolio, measured against the previous holdings after
+  they drifted with the day's returns. One-way turnover = the share of the portfolio replaced.
+- Cost of a day = buys x buy rate + sells x sell rate, paid at the rebalance: net return = (1 - cost) x
+  (1 + gross return) - 1.
+- Flat cost levels: 0, 10 and 20 bps on every buy and every sell.
+- Realistic costs: buys 8 bps (3 bps commission and exchange fees + 5 bps slippage); sells 18 bps (the same 8 +
+  10 bps stamp duty), 13 bps from 2023-08-28 (stamp duty halved to 5 bps).
+- Blocked trades (used by every "realistic" number): at the close of day t,
+  - a stock that did not trade on t, or closed at its lower price limit, cannot be sold or reduced (it stays held);
+  - a stock that closed at its upper price limit cannot be bought or increased;
+  - price limits: 20% for ChiNext (codes SZ300, SZ301) from 2020-08-24 and for STAR (SH688), otherwise 10%;
+    "closed at the limit" = the close-to-previous-traded-close return is within 0.5 percentage points of the limit
+    and the close equals the day's high (upper) or low (lower);
+  - weight that cannot be placed stays in cash (return 0); the remaining target stocks share the rest equally;
+  - a held stock's value follows its last traded close (a suspended stock earns its whole move when it trades again).
+- Without blocking, the gross returns are exactly the paper backtest's (a held stock with no next-day price earns 0
+  that day).
+- Placebo runs (shuffled answers) value holdings with the shuffled next-day returns (a stock outside the day's
+  universe earns 0), so no real return enters a placebo result.
+- Long-short spread: top 10% minus bottom 10% of the eligible stocks, equal weights, gross, no blocking. A signal
+  measure only (shorting is restricted in China), never a tradable result.
+- "After-cost Sharpe" = Sharpe of the daily net return with realistic costs and blocking.
+
+### Rule WK: the keep rule, applied by code
+
+Statistics (`detmaso compare --split walkforward`):
+
+- A model's yearly IC = the mean daily IC in that fold's test window; its seed-mean IC averages the seeds.
+- Yearly gain = the candidate's seed-mean yearly IC minus the reference's. Average gain = the mean of the 11
+  yearly gains (each fold weighs the same; the 14-month last fold counts as one year).
+- 95% ranges: paired, stratified block resampling. Within each test window the days are redrawn as circular
+  20-day blocks (one draw shared by every model, so the comparison is paired by day); each model's seeds are
+  redrawn with replacement from its own random stream (seeded by RNG seed 0 and the model's name), once per draw
+  for all folds; 10,000 draws. The range is the 2.5-97.5% percentile range of the draws. Sharpe ranges use the
+  same day draws, joined across the folds.
+
+"Improvement" only if all of these hold:
+
+- K1: the average gain's 95% range lies entirely above 0;
+- K2 (general form): the yearly gain is above 0 in at least 8 of the 11 years;
+- K2 (targeted form, when target years are declared here and on the command line before the run): the yearly
+  gain is above 0 in more than half of the target years, and in every other year that year's 95% range is not
+  entirely below 0;
+- K3: at least 4 of 5 seeds gain on average (seed s's gain = the mean over the years of its yearly IC minus the
+  reference's seed s yearly IC);
+- K4: if the change has a tunable setting, the next setting over (named on the command line) also has an average
+  gain above 0. The command line must say either which run is the next setting or that there is no tunable setting;
+- K5: the 95% range of the after-cost Sharpe difference (candidate minus reference) is not entirely below 0.
+
+Otherwise: "worse" if the average gain's 95% range lies entirely below 0, else "no improvement". Every condition
+is reported with the numbers behind it, together with each model's try number, deflated Sharpe and deflated IC.
+
+### Rule WP: the walk-forward placebo (runs before any real walk-forward run)
+
+The walk-forward paper config and the walk-forward single network, trained and evaluated through every fold on
+shuffled answers (the existing placebo: 20-day blocks, shuffle seed 0). Pass only if both hold:
+
+- P1: for each of the two placebo groups, the 95% range of its average IC (the mean over the 11 years of its
+  seed-mean yearly IC) is not entirely above 0;
+- P2: Rule WK, applied in both directions between the two groups (no tunable setting), never says "improvement".
+
+If either check fails: stop, report, and ask the owner before any real walk-forward run.
+
+Outcome (2026-11-08, EXPERIMENTS E19): **passed**. P1: average IC +0.0010 [-0.0031, +0.0051] (paper config) and
++0.0028 [-0.0025, +0.0081] (single network); P2: "no improvement" in both directions. Reported to the owner: the
+after-cost Sharpe difference between the two placebo groups is detectable (+0.29 [+0.11, +0.48]) because their
+turnover differs (37% vs 26% of the portfolio a day), not their gross returns; K5 responds to turnover.
+
+### Deflated metrics for walk-forward results
+
+- Number of tries: every counted try in the ledger (validation and walk-forward alike).
+- Spread of the tries' results: from the walk-forward tries once at least 3 have walk-forward metrics; until
+  then, from the validation tries, whose spread is larger, so the deflated numbers come out more cautious. The
+  report says which was used.
+- Deflated Sharpe uses the daily after-cost excess return (realistic costs with blocking, minus the equal-weighted
+  eligible stocks); deflated IC uses the standard error of the average IC from the resampling above.
+
 ## Grids set by Rule G
 
 (Appended, timestamped, as each pilot finishes and before any run that looks at validation.)
@@ -152,3 +260,9 @@ kept the rules as written (no rule change), so the change was dropped (EXPERIMEN
     method and say so. Two examples, from the scheduler-balance report, which repeats two Step 1 comparisons:
     Det-MASO minus the single network, IC [-0.0878, +0.0114] becomes [-0.0882, +0.0102]; minus the single
     network with mood inputs, [-0.1435, -0.0166] becomes [-0.1423, -0.0177].
+- **2026-11-08, general keep rule: after-cost Sharpe condition added (owner's OK, walk-forward plan decision D6 a).**
+  - Before: the keep rule judged walk-forward IC only.
+  - Now: it also requires that the 95% range of the after-cost Sharpe gain is not entirely below 0 (Rule WK, K5).
+  - Reason: TODO.md says every later step is judged on walk-forward IC and after-cost Sharpe; a change that raises
+    IC but detectably loses money after trading costs is not an improvement.
+  - Made before any walk-forward run, so no result had been seen. CLAUDE.md's wording is the owner's to update.

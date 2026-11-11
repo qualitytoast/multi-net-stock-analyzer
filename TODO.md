@@ -7,21 +7,21 @@ rules in CLAUDE.md; their tooling is built (see ROADMAP.md).
 
 Why: 278 validation days are too few and too noisy to judge changes, and real trading has costs.
 
-- [ ] Walk-forward evaluation:
-  - retrain each year on all earlier data, then test on the next year;
-  - folds run up to 2024-02-28 only;
-  - inside each fold, use the last part of the training window for early stopping;
-  - purge 20 days at every boundary.
-- [ ] Trading costs: report results at 0, 10 and 20 basis points per trade. Claude: look up China's current stamp duty and typical commissions and include a realistic setting.
-- [ ] Report daily turnover: the share of the portfolio swapped each day.
-- [ ] Add a long-short spread (top 10% minus bottom 10%) as an extra signal measure.
-- [ ] Re-check the single-network comparison (Step 1) under walk-forward.
-- [ ] Decide how the market moods are defined inside each fold. The K-means moods are fit on 2012-2022, so using them in earlier folds is look-ahead; refitting per fold changes what each mood (and its agent) means from fold to fold.
+The tooling is built (2026-11-08; see ROADMAP.md): walk-forward evaluation (11 folds, test years 2013-2023, history
+from 2008, moods refit per fold), trading costs (0, 10, 20 bps and realistic), turnover, blocked trades, the
+long-short spread, and the keep rule as code (docs/RULES.md, Rules WL, WT, WK, WP).
 
-Notes from the scheduler-collapse fix (2026-11-07; the load-balancing penalty was dropped, but stays in the code behind `loss.c_bal` if a walk-forward version is ever tried, with its own pre-written rules):
-- The rare moods are only partly testable: all 59 Tail-Risk days are in 2015 and no earlier year has any, so no fold both trains and tests a Tail-Risk specialist; Low-Vol Bear is tested only in the 2016 fold; High-Vol Bull in 2015 (with 24 training days), 2019 and 2020.
-- With mood-share balance targets, a fold whose training years contain no days of a mood gives that agent a target of 0, so the penalty leaves it alone.
-- Early stopping on a window that holds only common moods cannot pick a good epoch for the rare-mood agents; the inner early-stopping window above helps.
+- [ ] Re-check the single-network comparison (Step 1) under walk-forward: `configs/walkforward/paper.yaml` vs
+  `configs/walkforward/single_mlp.yaml` (and the single network with mood inputs), judged by Rule WK. Write which
+  run is the candidate before running.
+
+Notes from the scheduler-collapse fix (2026-11-07; the load-balancing penalty was dropped, but stays in the code behind
+`loss.c_bal` if a walk-forward version is ever tried, with its own pre-written rules):
+- With the walk-forward history from 2008, the moods are refit in every fold, so the old counts (all 59 Tail-Risk
+  days in 2015) no longer hold; each fold's mood shares of its training and test days are in its walk-forward report.
+- With mood-share balance targets, a fold whose training years contain no days of a mood gives that agent a target
+  of 0, so the penalty leaves it alone.
+- Early stopping on a year that holds only common moods cannot pick a good epoch for the rare-mood agents.
 
 Done when: every later step is judged on walk-forward IC and after-cost Sharpe.
 

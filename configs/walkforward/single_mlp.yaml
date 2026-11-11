@@ -1,0 +1,3 @@
+# The Step 1 single network (configs/csi300_single_mlp.yaml), evaluated walk-forward.
+base: [../csi300_single_mlp.yaml, _layer.yaml]
+variant: wf_single_mlp

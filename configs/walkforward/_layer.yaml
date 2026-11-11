@@ -1,0 +1,21 @@
+# Walk-forward layer (docs/RULES.md, Rule WL). Not a config on its own: a walk-forward variant merges it on top
+# of a validation-period config with `base: [<that config>, _layer.yaml]`.
+#
+# 11 folds: test years 2013-2023 (the last fold runs to 2024-02-28); fold Y trains on 2008 .. Y-2, early-stops
+# on Y-1 and is tested on Y, with 20-day purges. The locked test period (from 2024-03-01) is never used.
+# History starts in 2008 (decision D2 a); data is loaded from 2007 for the 120-day warm-up. Its own run folder,
+# so the paper config's prepared data is untouched.
+run_dir: runs/csi300_wf
+
+data:
+  load_start: "2007-01-01"
+
+splits:
+  train: ["2008-01-01", "2022-12-31"]  # history start; the folds below decide what each model trains on
+
+walkforward:
+  first_test_year: 2013
+  last_test_year: 2023
+  end: "2024-02-28"
+  early_stop_years: 1
+  moods: per_fold

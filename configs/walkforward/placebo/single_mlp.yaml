@@ -1,0 +1,6 @@
+# Walk-forward placebo (docs/RULES.md, Rule WP): the walk-forward single network on shuffled answers.
+base: ../single_mlp.yaml
+variant: placebo_wf_single_mlp
+
+placebo:
+  shuffle_seed: 0

@@ -14,8 +14,9 @@ Deflated IC uses the same logic, but the IC's standard error comes from the 20-d
 because neighbouring days' 20-day labels overlap (the formula's T independent days would overstate the data
 about 20-fold): Phi((IC - IC0) / SE), IC0 = sd(tries' IC) * the same expected-maximum factor.
 
-Rules G, M, S, K and P of the scheduler-balance change are implemented below as plain functions that return
-their verdict together with every number behind it, so they are applied by code, not by eye.
+Rules G, M, S, K and P of the scheduler-balance change, and the walk-forward keep rule (WK) and placebo rule (WP),
+are implemented below as plain functions that return their verdict together with every number behind it, so they
+are applied by code, not by eye.
 """
 
 from __future__ import annotations
@@ -30,6 +31,8 @@ PILOT_STRENGTHS = (1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0)
 GRID_STEPS = (10**-0.5, 1.0, 10**0.5, 10.0, 10**1.5, 100.0)  # g0/sqrt(10) ... 100 g0, half-decade steps
 BETTER, WORSE, NO_DIFFERENCE = "better", "worse", "no detectable difference"
 KEPT, DROPPED = "kept for re-check", "dropped"
+IMPROVEMENT, NO_IMPROVEMENT = "improvement", "no improvement"
+YEAR_WIN_SHARE = 8 / 11  # the general keep rule: wins in at least 8 of 11 walk-forward years
 NOT_FIXED, NO_SPECIALISTS = "not fixed at any tested strength", "all agents used, but no specialists"
 
 
@@ -168,3 +171,58 @@ def rule_p(pooled_low: float, chosen: dict | None) -> dict:
     p1 = not pooled_low > 0  # the range is not entirely above 0
     p2 = chosen is None or (not chosen["ic_low"] > 0 and chosen["k_verdict"] != BETTER)
     return {"p1": p1, "p2": p2, "pass": bool(p1 and p2)}
+
+
+# Walk-forward keep rule (docs/RULES.md, Rule WK) --------------------------------------------------------------
+def keep_rule(
+    yearly: dict[int, dict], average: dict, seed_gains: dict[int, float], sharpe: dict, has_setting: bool,
+    neighbor_gain: float | None = None, target_years: list[int] | None = None,
+) -> dict:  # fmt: skip
+    """Rule WK for a candidate against a reference.
+
+    yearly[year] = {"gain", "low", "high"}: seed-mean IC gain in that test year and its 95% range;
+    average = {"gain", "low", "high"}: the mean of the yearly gains; seed_gains[seed] = that seed's mean yearly gain;
+    sharpe = {"diff", "low", "high"}: after-cost Sharpe difference; neighbor_gain = the next setting's average gain
+    (required when has_setting); target_years = the years a targeted change declared in advance (None = general form).
+    """
+    years = sorted(yearly)
+    k1 = average["low"] > 0
+    wins = [y for y in years if yearly[y]["gain"] > 0]
+    if target_years:
+        unknown = sorted(set(target_years) - set(years))
+        if unknown:
+            raise ValueError(f"target years {unknown} are not walk-forward test years {years}")
+        targets = sorted(set(target_years))
+        target_wins = [y for y in targets if yearly[y]["gain"] > 0]
+        need = len(targets) // 2 + 1
+        worse_elsewhere = [y for y in years if y not in targets and yearly[y]["high"] < 0]
+        k2 = len(target_wins) >= need and not worse_elsewhere
+        k2_detail = {"form": "targeted", "target_years": targets, "target_wins": target_wins, "target_wins_needed": need,
+                     "other_years_worse": worse_elsewhere}  # fmt: skip
+    else:
+        need = math.ceil(YEAR_WIN_SHARE * len(years) - 1e-9)
+        k2 = len(wins) >= need
+        k2_detail = {"form": "general", "wins_needed": need}
+    seeds = sorted(seed_gains)
+    seed_wins = sum(seed_gains[s] > 0 for s in seeds)
+    seeds_needed = math.ceil(0.8 * len(seeds))
+    k3 = len(seeds) > 0 and seed_wins >= seeds_needed
+    if has_setting and neighbor_gain is None:
+        raise ValueError("the change has a tunable setting: name the next setting over (its run group) to apply K4")
+    k4 = (neighbor_gain is not None and neighbor_gain > 0) if has_setting else True
+    k5 = not sharpe["high"] < 0
+    passed = {"k1": k1, "k2": k2, "k3": k3, "k4": k4, "k5": k5}
+    verdict = IMPROVEMENT if all(passed.values()) else WORSE if average["high"] < 0 else NO_IMPROVEMENT
+    return {
+        "verdict": verdict, **passed, "average": average, "year_wins": wins, "n_years": len(years), "k2_detail": k2_detail,
+        "seed_wins": seed_wins, "seeds": len(seeds), "seeds_needed": seeds_needed, "has_setting": has_setting,
+        "neighbor_gain": neighbor_gain, "sharpe": sharpe,
+    }  # fmt: skip
+
+
+def rule_wp(levels: dict[str, tuple[float, float]], keep_verdicts: dict[str, str]) -> dict:
+    """Rule WP (walk-forward placebo). levels[group] = 95% range of its average IC; keep_verdicts[pair] = Rule WK
+    verdicts between the placebo groups, in both directions."""
+    p1 = all(not lo > 0 for lo, _ in levels.values())
+    p2 = all(v != IMPROVEMENT for v in keep_verdicts.values())
+    return {"p1": p1, "p2": p2, "pass": bool(p1 and p2), "levels": levels, "keep_verdicts": keep_verdicts}

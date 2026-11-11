@@ -5,7 +5,7 @@ decisions (D1-D10) refer to [docs/PLAN.md](docs/PLAN.md); changes to planned def
 [DEVIATIONS.md](DEVIATIONS.md); every run is logged in [EXPERIMENTS.md](EXPERIMENTS.md). Open work
 is in [TODO.md](TODO.md).
 
-Last updated: 2026-11-07
+Last updated: 2026-11-08
 
 ## Status
 
@@ -17,6 +17,7 @@ Last updated: 2026-11-07
 | Step 1: 5 agents vs a single network | Done. Det-MASO does **not** beat a single network on validation (single network IC 0.103 vs 0.062; no detectable difference under the fixed rule, every estimate favoring the single network). See [write-up](results/csi300/single_vs_ensemble/README.md). |
 | Guards against fooling ourselves | Tooling built 2026-11-07 (try ledger, rules as code, placebo, deflated Sharpe and IC); standing rules in CLAUDE.md. 16 tries counted so far ([trials.csv](results/csi300/trials.csv)). |
 | Scheduler collapse fix | Done 2026-11-07: **dropped**. The load-balancing penalty fixes the collapse in the usage sense from strength 0.1 up, but the agents do not reliably become mood specialists (mostly the Tail-Risk mood fails), so the rule written in advance said "no specialists"; the owner kept the rule. Validation IC does not change detectably. See [write-up](results/csi300/scheduler_balance/README.md). |
+| Walk-forward evaluation | Tooling built 2026-11-08: 11 yearly folds (test years 2013-2023, history from 2008, moods refit per fold), trading costs, turnover, blocked trades, long-short spread, the keep rule as code. Placebo passed (E19). No real-answer walk-forward run yet. Rules: [docs/RULES.md](docs/RULES.md), Rules WL, WT, WK, WP. |
 | S&P 500 (M10) | Deferred. Waiting on the owner's WRDS access check. |
 | Repo | Public on GitHub, "all rights reserved, viewing only". |
 
@@ -52,6 +53,23 @@ Last updated: 2026-11-07
   - Process, in the order the rules require: placebo first (whole procedure on shuffled answers: average IC +0.005 [-0.006, +0.016], passed); training-only pilot set the grid 0.03, 0.1, 0.3, 1, 3, 10; 6 strengths x 5 seeds.
   - Result: every agent gets at least half its target share from 0.1 up (paper config: the rare-mood agents get almost nothing), and mood specialists mostly form (own agent 79-93% at strength 10), but not in every seed, mostly for Tail-Risk (59 training days, all in 2015). Rule S: "all agents used, but no specialists"; the owner kept the rule, so the change is dropped. Validation IC 0.036-0.072 vs 0.062 for the paper config: no detectable difference; all below the single network (0.103).
   - Walk-forward notes recorded in TODO.md (moods must be redefined per fold; the rare moods are only partly testable).
+
+- [x] **Walk-forward evaluation tooling** (2026-11-08; EXPERIMENTS E18-E19; [placebo results](results/csi300/walkforward/placebo/comparison.md))
+  - Built: a `walkforward` config section (`configs/walkforward/`: a layer merged on top of any validation-period
+    config with a list `base:`); 11 folds, test years 2013-2023 (the last to 2024-02-28), each trained from scratch on
+    2008 .. Y-2 and early-stopped on Y-1, 20-day purges, a code guard against the locked test period; moods and the
+    scheduler's input scaling refit per fold; fold x seed jobs in parallel, resumable, one try per configuration.
+  - Trading tools: daily turnover against drifted holdings, costs at 0, 10, 20 bps and realistic China costs (buys
+    8 bps, sells 18 bps, 13 bps from 2023-08-28), blocked trades at price limits and suspensions, the long-short spread.
+  - `evaluate --split walkforward` (per-year and joined metrics with 95% ranges, cost table, moods per fold, try number,
+    deflated Sharpe and IC) and `compare --split walkforward` with `--rule keep` (Rule WK, including the new after-cost
+    Sharpe condition K5 approved by the owner) and `--rule placebo` (Rule WP); 194 tests.
+  - Data: 2007-2026 prepared separately (`runs/csi300_wf`); 2008-2011 pass the per-year check.
+  - Paper config unchanged: retrained models identical to `final` in every weight (E18); validation report reproduced
+    byte for byte.
+  - Placebo passed (E19): average IC +0.0010 and +0.0028, both ranges containing 0; "no improvement" both ways. The
+    after-cost Sharpe of the two placebo models differs detectably because Det-MASO turns over 37% of its portfolio a
+    day against 26% for the single network.
 
 Test-period checks: q1 (agents stay different) pass; q2 (scheduler does not collapse) **fail**,
 entropy 0.03 of 1.61; q3 (Tail-Risk share 3-7%) **fail**, 2.2%; q4 (Shapley claim) pass, 4 of 5 seeds.

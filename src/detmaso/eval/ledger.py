@@ -10,6 +10,11 @@ switched on: every such run checks the validation IC each epoch, so each one is 
 Identical reruns are the same row. Placebo runs (shuffled answers) and training-only runs (train.validate
 false) are recorded but not counted.
 
+A walk-forward configuration is one try too (all its folds and seeds); its job statuses are stored as
+"<tag>:Y<year>:s<seed>", and `detmaso evaluate --split walkforward` adds the walk-forward metrics (columns
+starting with "wf_"). ``deflation_inputs`` gives the number of tries and the spread of their results that the
+deflated Sharpe and IC need (docs/RULES.md, "Deflated metrics for walk-forward results").
+
 Only the CLI writes the real ledger; library code and tests pass explicit paths. Writes take an exclusive
 file lock, so parallel training processes cannot lose each other's updates.
 """
@@ -33,10 +38,13 @@ from detmaso.config import Config
 ROOT = Path(__file__).resolve().parents[3]
 COLUMNS = [
     "try_no", "config_hash", "kind", "first_trained", "config", "variant", "run_groups", "seed_status",
-    "valid_days", "ic", "ic_sd_seeds", "sharpe", "excess_sharpe", "excess_sr_daily", "note",
+    "valid_days", "ic", "ic_sd_seeds", "sharpe", "excess_sharpe", "excess_sr_daily",
+    "wf_years", "wf_ic", "wf_ic_sd_seeds", "wf_sharpe_net", "wf_excess_sr_daily_net", "note",
 ]  # fmt: skip
 REAL, PLACEBO, PILOT = "real", "placebo", "training-only"
 METRICS = ("valid_days", "ic", "ic_sd_seeds", "sharpe", "excess_sharpe", "excess_sr_daily")
+WF_METRICS = ("wf_years", "wf_ic", "wf_ic_sd_seeds", "wf_sharpe_net", "wf_excess_sr_daily_net")
+MIN_WF_TRIES = 3  # walk-forward tries needed before their own spread is used
 
 
 def ledger_path(market: str) -> Path:
@@ -77,8 +85,9 @@ def _row_for(rows: list[dict], key: str) -> dict | None:
     return next((r for r in rows if r["config_hash"] == key), None)
 
 
-def register(path: Path, cfg: Config, config_path: str, tag: str, seeds: list[int], note: str = "", when: str | None = None) -> dict:
-    """Add the configuration (or the run group / seeds to its row) before training starts."""
+def register(path: Path, cfg: Config, config_path: str, tag: str, seeds: list[int], note: str = "", when: str | None = None,
+             jobs: list[str] | None = None) -> dict:  # fmt: skip
+    """Add the configuration (or the run group / seeds / walk-forward jobs to its row) before training starts."""
     with _locked_rows(path) as rows:
         row = _row_for(rows, cfg.hash())
         if row is None:
@@ -94,13 +103,13 @@ def register(path: Path, cfg: Config, config_path: str, tag: str, seeds: list[in
         if tag not in groups:
             row["run_groups"] = ";".join(groups + [tag])
         status = json.loads(row["seed_status"] or "{}")
-        for s in seeds:
+        for s in [*seeds, *(jobs or [])]:
             status.setdefault(f"{tag}:{s}", "started")
         row["seed_status"] = json.dumps(status, sort_keys=True)
         return dict(row)
 
 
-def set_seed_status(path: Path, cfg: Config, tag: str, seed: int, status: str) -> None:
+def set_seed_status(path: Path, cfg: Config, tag: str, seed: int | str, status: str) -> None:
     with _locked_rows(path) as rows:
         row = _row_for(rows, cfg.hash())
         if row is None:
@@ -130,21 +139,50 @@ def validation_metrics(run: Path) -> dict:
     }
 
 
-def record_metrics(path: Path, cfg: Config, metrics: dict) -> None:
+def record_metrics(path: Path, cfg: Config, metrics: dict, keys: tuple[str, ...] = METRICS) -> None:
     with _locked_rows(path) as rows:
         row = _row_for(rows, cfg.hash())
         if row is None:
             raise KeyError(f"config {cfg.hash()} is not in the ledger {path}; it must be registered by `train`")
-        for k in METRICS:
+        for k in keys:
             v = metrics[k]
             row[k] = str(v) if isinstance(v, int) else f"{v:.10g}"
+
+
+def record_wf_metrics(path: Path, cfg: Config, metrics: dict) -> None:
+    record_metrics(path, cfg, metrics, WF_METRICS)
+
+
+def deflation_inputs(path: Path) -> dict:
+    """Number of counted tries and the spread of their IC and daily excess Sharpe, for walk-forward results.
+
+    The spread comes from the walk-forward tries once at least MIN_WF_TRIES have walk-forward metrics; until
+    then from the validation tries (a shorter, noisier period, so a wider spread and more cautious numbers).
+    """
+    t = tries(path)
+    wf = t.dropna(subset=["wf_ic", "wf_excess_sr_daily_net"]) if len(t) else t
+    if len(wf) >= MIN_WF_TRIES:
+        ic, sr, source = wf["wf_ic"], wf["wf_excess_sr_daily_net"], f"the {len(wf)} walk-forward tries"
+    else:
+        ic, sr = t["ic"].dropna(), t["excess_sr_daily"].dropna()
+        source = f"the {len(ic)} validation tries (fewer than {MIN_WF_TRIES} walk-forward tries so far; a wider, more cautious spread)"
+    ic_v, sr_v = ic.to_numpy(float), sr.to_numpy(float)
+    return {
+        "n_tries": int(len(t)),
+        "ic_sd": float(np.std(ic_v, ddof=1)) if len(ic_v) > 1 else float("nan"),
+        "sr_sd": float(np.std(sr_v, ddof=1)) if len(sr_v) > 1 else float("nan"),
+        "source": source,
+    }
 
 
 def read(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame(columns=COLUMNS)
     df = pd.read_csv(path, dtype={"try_no": "Int64", "config_hash": str, "note": str}, keep_default_na=False, na_values=[""])
-    return df
+    for c in COLUMNS:  # a ledger written before a column existed reads it as empty
+        if c not in df.columns:
+            df[c] = np.nan
+    return df[COLUMNS]
 
 
 def tries(path: Path) -> pd.DataFrame:

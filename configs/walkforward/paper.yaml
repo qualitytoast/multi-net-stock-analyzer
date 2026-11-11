@@ -1,0 +1,3 @@
+# The paper configuration (configs/csi300.yaml), evaluated walk-forward.
+base: [../csi300.yaml, _layer.yaml]
+variant: wf_paper
