@@ -213,6 +213,11 @@ No walk-forward run on the real answers was made: the first one belongs to the t
 - **Finding for the owner:** the after-cost Sharpe difference (single minus paper) is +0.29 [+0.11, +0.48], entirely
   above 0, although the gross difference is not (+0.01, [-0.15, +0.18]). On shuffled answers the paper config still
   replaces 36-40% of its portfolio a day against 24-28% for the single network (every seed), so it pays more costs.
+- **Note (2026-11-11):** the after-cost figures above ("Sharpe after costs" and the after-cost Sharpe difference),
+  like every blocked-trade number in the committed placebo reports, predate the placebo valuation fix (a held stock
+  outside that block's shuffle now earns 0 instead of its real next-day return; docs/RULES.md, "Rule changes").
+  They will be re-evaluated (evaluation only, no retraining) right after this change. The Rule WP verdict does not
+  depend on them: P1 uses IC only and P2 fails on K1 in both directions.
   K5 therefore also responds to turnover, which is a real property of a model even when there is nothing to predict.
 - **Costs:** on shuffled answers the daily top-10% portfolio's annual return falls from about +4% before costs to
   -12% (single network) and -18% (paper config) after realistic costs (max drawdown 84-93%); at a flat 10 bps it is

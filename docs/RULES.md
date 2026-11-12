@@ -225,6 +225,10 @@ Outcome (2026-11-08, EXPERIMENTS E19): **passed**. P1: average IC +0.0010 [-0.00
 after-cost Sharpe difference between the two placebo groups is detectable (+0.29 [+0.11, +0.48]) because their
 turnover differs (37% vs 26% of the portfolio a day), not their gross returns; K5 responds to turnover.
 
+Note (2026-11-11): the committed after-cost placebo figures (this Sharpe difference and every blocked-trade number
+in the placebo reports) predate the placebo valuation fix logged in "Rule changes" and will be re-evaluated
+(evaluation only, no retraining) right after this change. The verdict does not depend on them.
+
 ### Deflated metrics for walk-forward results
 
 - Number of tries: every counted try in the ledger (validation and walk-forward alike).
@@ -266,3 +270,17 @@ turnover differs (37% vs 26% of the portfolio a day), not their gross returns; K
   - Reason: TODO.md says every later step is judged on walk-forward IC and after-cost Sharpe; a change that raises
     IC but detectably loses money after trading costs is not an improvement.
   - Made before any walk-forward run, so no result had been seen. CLAUDE.md's wording is the owner's to update.
+- **2026-11-11, walk-forward rules as applied by code: three corrections (approved by the owner during the review of
+  the walk-forward change, before any real-answer walk-forward run).**
+  - Placebo valuation (Rule WT). Before: a held stock outside that block's shuffle (held on only because it could
+    not be sold) earned its real next-day return. Now: it earns 0, like a stock outside the day's universe. Reason:
+    the code now matches the rule's existing sentence "no real return enters a placebo result".
+  - Rules WK and WP. Before: a condition whose gain, range bound or Sharpe difference was not finite could count
+    as met. Now: the rule refuses to give a verdict. Reason: a number that could not be computed is no evidence.
+  - Walk-forward resampling (Rule WK statistics). Before: one day without an IC made that seed's yearly IC, and
+    every range built on it, not finite. Now: such days are left out. Reason: consistent with the point estimates
+    and with the validation-period resampling. Results whose IC days are all finite do not change.
+  - Made after the walk-forward placebo results (E19) were seen. The Rule WP verdict is unaffected: P1 uses IC
+    only, P2 fails on K1 in both directions, and every committed range is finite. The committed after-cost placebo
+    figures predate the valuation correction and will be re-evaluated (evaluation only, no retraining) right after
+    this change.

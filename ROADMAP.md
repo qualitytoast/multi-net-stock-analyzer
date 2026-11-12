@@ -63,13 +63,15 @@ Last updated: 2026-11-08
     8 bps, sells 18 bps, 13 bps from 2023-08-28), blocked trades at price limits and suspensions, the long-short spread.
   - `evaluate --split walkforward` (per-year and joined metrics with 95% ranges, cost table, moods per fold, try number,
     deflated Sharpe and IC) and `compare --split walkforward` with `--rule keep` (Rule WK, including the new after-cost
-    Sharpe condition K5 approved by the owner) and `--rule placebo` (Rule WP); 213 tests.
+    Sharpe condition K5 approved by the owner) and `--rule placebo` (Rule WP); 215 tests.
   - Data: 2007-2026 prepared separately (`runs/csi300_wf`); 2008-2011 pass the per-year check.
   - Paper config unchanged: retrained models identical to `final` in every weight (E18); validation report reproduced
     byte for byte.
   - Placebo passed (E19): average IC +0.0010 and +0.0028, both ranges containing 0; "no improvement" both ways. The
     after-cost Sharpe of the two placebo models differs detectably because Det-MASO turns over 37% of its portfolio a
-    day against 26% for the single network.
+    day against 26% for the single network. The after-cost placebo figures predate the 2026-11-11 placebo valuation
+    fix (docs/RULES.md, "Rule changes") and are due for re-evaluation (evaluation only); the verdict does not depend
+    on them.
 
 Test-period checks: q1 (agents stay different) pass; q2 (scheduler does not collapse) **fail**,
 entropy 0.03 of 1.61; q3 (Tail-Risk share 3-7%) **fail**, 2.2%; q4 (Shapley claim) pass, 4 of 5 seeds.

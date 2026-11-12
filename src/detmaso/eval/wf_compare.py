@@ -87,6 +87,8 @@ def run_wf_compare(
             raise WFError("rule keep needs --candidate: the tag of a compared run group other than the reference")
         if neighbor is None and not no_setting:
             raise WFError("rule keep needs --neighbor TAG (the next setting over) or --no-tunable-setting")
+        if neighbor is not None and no_setting:
+            raise WFError("rule keep takes --neighbor TAG or --no-tunable-setting, not both")
         if neighbor is not None and (neighbor not in by_tag or by_tag[neighbor] in (ref, by_tag[candidate])):
             raise WFError("--neighbor must be the tag of another compared run group")
         cand = by_tag[candidate]

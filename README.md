@@ -59,6 +59,8 @@ the 2023 stamp-duty cut), daily turnover, blocked trades at price limits, the lo
 applied by code. Its placebo on shuffled answers found nothing (average IC +0.001 and +0.003, both ranges containing
 0). It did show that trading costs matter a lot for this daily-rebalanced portfolio: even without any signal it
 replaces 26-37% of its holdings a day, and realistic costs turn an annual return of about +4% into -12% and -18%.
+(These after-cost placebo figures predate the 2026-11-11 placebo valuation fix and are due for re-evaluation;
+docs/RULES.md, "Rule changes".)
 Details: [placebo
 comparison](results/csi300/walkforward/placebo/comparison.md), rules in [docs/RULES.md](docs/RULES.md).
 
@@ -118,7 +120,7 @@ try numbers from [results/csi300/trials.csv](results/csi300/trials.csv), validat
 # Python 3.12 is required (pyqlib 0.9.7 has no 3.13 wheels); uv installs it for you.
 uv sync
 ./scripts/get_cn_data.sh        # pinned community Qlib CN dataset, verified by sha256 (about 570 MB)
-uv run pytest                   # 213 tests; data-dependent ones skip until `prepare` has run
+uv run pytest                   # 215 tests; data-dependent ones skip until `prepare` has run
 ```
 
 ## Run

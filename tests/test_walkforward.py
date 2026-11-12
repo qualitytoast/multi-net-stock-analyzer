@@ -340,6 +340,15 @@ def test_identical_run_groups_never_count_as_an_improvement(trained):
     assert keep_rule(x["yearly"], x["average"], x["seed_gains"], x["sharpe"], has_setting=False)["verdict"] == "no improvement"
 
 
+def test_cli_takes_a_next_setting_or_no_tunable_setting_never_both(tmp_path, capsys):
+    from detmaso.cli import main
+
+    with pytest.raises(SystemExit):
+        main(["compare", "--split", "walkforward", "--runs", "a.yaml:x", "b.yaml:y", "c.yaml:z", "--out", str(tmp_path),
+              "--rule", "keep", "--candidate", "y", "--neighbor", "z", "--no-tunable-setting"])  # fmt: skip
+    assert "--no-tunable-setting: not allowed with argument --neighbor" in capsys.readouterr().err
+
+
 def test_cli_routes_walkforward_configs(tmp_path):
     from detmaso.cli import main
 

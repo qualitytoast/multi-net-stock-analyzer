@@ -190,7 +190,7 @@ def keep_rule(
     yearly[year] = {"gain", "low", "high"}: seed-mean IC gain in that test year and its 95% range;
     average = {"gain", "low", "high"}: the mean of the yearly gains; seed_gains[seed] = that seed's mean yearly gain;
     sharpe = {"diff", "low", "high"}: after-cost Sharpe difference; neighbor_gain = the next setting's average gain
-    (required when has_setting); target_years = the years a targeted change declared in advance (None = general form).
+    (given exactly when has_setting); target_years = the years a targeted change declared in advance (None = general form).
     Raises when any of these numbers is not finite.
     """
     years = sorted(yearly)
@@ -224,7 +224,9 @@ def keep_rule(
     k3 = len(seeds) > 0 and seed_wins >= seeds_needed
     if has_setting and neighbor_gain is None:
         raise ValueError("the change has a tunable setting: name the next setting over (its run group) to apply K4")
-    k4 = (neighbor_gain is not None and neighbor_gain > 0) if has_setting else True
+    if not has_setting and neighbor_gain is not None:
+        raise ValueError("the change is declared to have no tunable setting, yet a next setting over was named")
+    k4 = not has_setting or neighbor_gain > 0
     k5 = not sharpe["high"] < 0
     passed = {"k1": k1, "k2": k2, "k3": k3, "k4": k4, "k5": k5}
     verdict = IMPROVEMENT if all(passed.values()) else WORSE if average["high"] < 0 else NO_IMPROVEMENT

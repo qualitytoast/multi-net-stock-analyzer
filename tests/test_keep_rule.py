@@ -275,6 +275,15 @@ def test_compare_blocks_a_planted_gain_when_the_neighbor_does_not_gain(planted):
     assert k["verdict"] == IMPROVEMENT and not k["has_setting"] and k["neighbor"] is None
 
 
+def test_compare_refuses_a_next_setting_together_with_no_tunable_setting(planted):
+    """Rule WK, K4: the command line says either which run is the next setting or that there is none. With both, a
+    next setting that lost would be ignored and the planted gain reported as an improvement."""
+    with pytest.raises(WFError, match="--neighbor TAG or --no-tunable-setting, not both"):
+        _compare(planted, ["ref", "better", "down"], "ref", rule="keep", candidate="better", neighbor="down", no_setting=True)
+    with pytest.raises(ValueError, match="no tunable setting, yet a next setting over was named"):
+        keep_rule(**_inputs([0.01] * 11), has_setting=False, neighbor_gain=-0.001)
+
+
 def test_compare_gains_are_candidate_minus_reference(planted):
     k = _compare(planted, ["ref", "better"], "better", rule="keep", candidate="ref", no_setting=True)
     assert k["verdict"] == WORSE and not k["k1"] and not k["k2"] and not k["k3"]
