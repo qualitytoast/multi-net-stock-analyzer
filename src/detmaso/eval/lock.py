@@ -89,6 +89,8 @@ def open_test_period(cfg: Config, tag: str, seeds: list[int], extra_reason: str 
         raise TestLockError("placebo configs (shuffled answers) can never open the test period")
     if not cfg.train.validate:
         raise TestLockError("training-only runs (train.validate false) can never open the test period")
+    if cfg.is_walkforward:
+        raise TestLockError("walk-forward configs evaluate their own folds only and can never open the test period")
     current = fingerprint(cfg, tag, seeds)
     path = lock_path(cfg)
     lock = json.loads(path.read_text()) if path.exists() else {"market": cfg.market, "entries": []}

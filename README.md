@@ -52,6 +52,18 @@ found nothing, as it should. Details: [write-up](results/csi300/scheduler_balanc
 Every result now carries its try number, deflated Sharpe and deflated IC (see "Guards" in CLAUDE.md and
 [docs/RULES.md](docs/RULES.md)).
 
+**Walk-forward evaluation (2026-11-08): built, not yet used on real answers.** Every later change is judged on 11
+yearly folds (test years 2013-2023; each fold trains from scratch on 2008 up to two years before its test year and
+early-stops on the year before), with trading costs (realistic China costs: buys 8 bps, sells 18 bps, 13 bps since
+the 2023 stamp-duty cut), daily turnover, blocked trades at price limits, the long-short spread, and the keep rule
+applied by code. Its placebo on shuffled answers found nothing (average IC +0.001 and +0.003, both ranges containing
+0). It did show that trading costs matter a lot for this daily-rebalanced portfolio: even without any signal it
+replaces 26-37% of its holdings a day, and realistic costs turn an annual return of about +4% into -12% and -18%.
+(These after-cost placebo figures predate the 2026-11-11 placebo valuation fix and are due for re-evaluation;
+docs/RULES.md, "Rule changes".)
+Details: [placebo
+comparison](results/csi300/walkforward/placebo/comparison.md), rules in [docs/RULES.md](docs/RULES.md).
+
 The market data is not included in this repository: it is downloaded by `scripts/get_cn_data.sh`
 from the community Qlib dataset (chenditc/investment_data), whose data has no explicit license, so
 the dataset is not redistributed here.
@@ -80,6 +92,10 @@ the dataset is not redistributed here.
   5 seeds per model): the answer paragraph, results with 95% bootstrap ranges, figures, assumptions.
 - [Scheduler collapse fix](results/csi300/scheduler_balance/README.md) (validation and training days, 5 seeds per
   model): the penalty, the placebo, the strength pilot, the rules and their outcomes, scheduler usage and routing.
+- [Walk-forward placebo](results/csi300/walkforward/placebo/comparison.md) (11 test years, 5 seeds per model, shuffled
+  answers): Rule WP passed; per-model reports with costs, turnover and moods per fold in `placebo/paper/` and
+  `placebo/single_mlp/`; the [walk-forward data report](results/csi300/walkforward/data_report.md) with its per-year
+  history check.
 
 ## What didn't work
 
@@ -104,7 +120,7 @@ try numbers from [results/csi300/trials.csv](results/csi300/trials.csv), validat
 # Python 3.12 is required (pyqlib 0.9.7 has no 3.13 wheels); uv installs it for you.
 uv sync
 ./scripts/get_cn_data.sh        # pinned community Qlib CN dataset, verified by sha256 (about 570 MB)
-uv run pytest                   # 161 tests; data-dependent ones skip until `prepare` has run
+uv run pytest                   # 215 tests; data-dependent ones skip until `prepare` has run
 ```
 
 ## Run
@@ -120,7 +136,7 @@ Variants of the paper config live in `configs/` and inherit it with `base: csi30
 what differs (for example `configs/csi300_nodiv.yaml` sets `loss.c_div: 0.0`; `configs/csi300_single_mlp.yaml`
 switches to a single network). A run group (`--tag`) belongs to one config: training refuses to add to a
 group trained with a different config, and evaluation refuses a mismatched config. Variants are compared on
-the validation period only:
+the validation period (or on walk-forward folds, see "Walk-forward evaluation" below), never on the test period:
 
 ```bash
 uv run detmaso train    --config configs/csi300_single_mlp.yaml --tag single_mlp
@@ -162,6 +178,40 @@ The load-balancing configs live in `configs/scheduler_balance/`: the strength pi
 strengths as `bal_c*.yaml`, and the placebo versions in `placebo/`. The full command sequence is in the
 [write-up](results/csi300/scheduler_balance/README.md).
 
+### Walk-forward evaluation
+
+The yardstick for every later change (docs/RULES.md, "Walk-forward evaluation"). A walk-forward config
+(`configs/walkforward/`) is a validation-period config plus the walk-forward layer `_layer.yaml`, e.g.
+`base: [../csi300_single_mlp.yaml, _layer.yaml]`. It has 11 folds: test years 2013-2023 (the last fold runs to
+2024-02-28). Fold Y trains from scratch on 2008 .. Y-2, early-stops on Y-1 and is tested on Y, with 20-day purges
+at every boundary; the market moods and the scheduler's input scaling are refit on each fold's pre-test days.
+Code refuses any fold that would touch the locked test period.
+
+```bash
+uv run detmaso prepare  --config configs/walkforward/paper.yaml          # data from 2007 into runs/csi300_wf
+uv run detmaso train    --config configs/walkforward/paper.yaml --tag wf --jobs 8   # 11 folds x 5 seeds, resumable
+uv run detmaso evaluate --config configs/walkforward/paper.yaml --tag wf --split walkforward
+uv run detmaso train    --config configs/walkforward/single_mlp.yaml --tag wf_single --jobs 8   # each config has its own tag
+uv run detmaso evaluate --config configs/walkforward/single_mlp.yaml --tag wf_single --split walkforward
+uv run detmaso compare  --split walkforward --reference wf --out results/csi300/walkforward/<name> \
+                        --runs configs/walkforward/paper.yaml:wf configs/walkforward/single_mlp.yaml:wf_single \
+                        --rule keep --candidate wf_single --no-tunable-setting [--target-years 2015 2016]
+```
+
+- **Report** (`report_wf.md`): IC by test year and over all years with 95% ranges, the paper backtest's Sharpe,
+  the after-cost Sharpe, daily turnover, the long-short spread (top 10% minus bottom 10%), results at 0, 10 and 20
+  bps per trade and at realistic China costs (buys 8 bps, sells 18 bps, 13 bps from 2023-08-28 when the stamp duty
+  was halved), with and without blocked trades (price limits, suspensions), the moods of each fold, early-stopping
+  facts, the try number, deflated Sharpe and deflated IC.
+- **Keep rule as code.** `compare --rule keep` applies the CLAUDE.md keep rule (Rule WK): the average IC gain's 95%
+  range above 0, at least 8 of 11 years won (or the targeted form), at least 4 of 5 seeds gaining, the next setting
+  over also gaining (`--neighbor <tag>` names its run group; `--no-tunable-setting` says the change has none), and
+  the after-cost Sharpe not detectably worse. `--rule placebo` applies Rule WP to two placebo run groups. Both
+  refuse to give a verdict when a number they need could not be computed (not finite).
+- A walk-forward configuration is one try in the ledger; each fold and seed is a job (`<tag>:Y<year>:s<seed>`,
+  marked `aborted: <reason>` when it fails or the run is interrupted, and retrained by the next `train`), and
+  `evaluate --split walkforward` adds its walk-forward metrics before it computes the report's deflated numbers.
+
 The test period (2024-03-01 to 2026-03-01) is locked. Evaluating it needs `--unlock-test` and an
 explicit `--tag`, always uses all configured seeds, and is recorded in the git-tracked
 `locks/csi300_test.json` with the config and data hashes, a fingerprint of the source code and the
@@ -178,18 +228,22 @@ unless `--extra-test-run "reason"` records it. Development uses the training and
 | `runs/csi300/<tag>/series_<split>.parquet` | per seed and decision date: daily IC, portfolio and benchmark returns, scheduler weights and entropy (input to `compare`) |
 | `runs/csi300/<tag>/usage_train.parquet` | from `usage`: per seed, checkpoint (restored or last) and training day: the day's mood, every agent's scheduler weight and dead flag |
 | `<compare --out>/` | `comparison.md`, `comparison.json`, `figures/` (metrics by seed, advantage ranges, cumulative return; with `--rule` also the strength sweep, usage relative to target and routing by mood) |
-| `results/csi300/trials.csv` | the try ledger (git-tracked): every trained configuration, its kind (counted try, placebo or training-only), run groups, seed statuses and validation metrics |
+| `runs/csi300_wf/prepared/` | walk-forward data (from 2008), `data_report.md` with a per-year history check, and `folds/fold<Y>/` each fold's moods |
+| `runs/csi300_wf/<tag>/fold<Y>/seed<k>/` | a walk-forward job: the same files as a validation-period seed folder |
+| `runs/csi300_wf/<tag>/` | `series_wf.parquet` (per seed and test day: fold, IC, paper backtest, benchmark, long-short, buys and sells with and without blocked trades), `results_wf.json`, `report_wf.md`, `figures_wf/`, `folds.json` |
+| `results/csi300/trials.csv` | the try ledger (git-tracked): every trained configuration, its kind (counted try, placebo or training-only), run groups, seed (or walk-forward job) statuses, validation and walk-forward metrics |
 | `docs/RULES.md` | the decision rules, written before each change's first run, and the grids set by pilots |
 
 ## Layout
 
 ```
 configs/               csi300.yaml (the paper config) and variants that inherit it with `base:`;
-                       scheduler_balance/ (pilot, grid strengths, placebo versions)
+                       scheduler_balance/ (pilot, grid strengths, placebo versions);
+                       walkforward/ (the walk-forward layer, the paper config and the single network, placebo versions)
 docs/                  PLAN.md (the MVP design), RULES.md (decision rules fixed before each change's first run)
 src/detmaso/
-  config.py            typed config; every assumption is a named value; post-paper flags, `base:` inheritance,
-                       placebo section
+  config.py            typed config; every assumption is a named value; post-paper flags, `base:` inheritance
+                       (one file or a list), placebo, walkforward and trading (evaluation-only) sections
   data/                qlib_io, returns, labels, features (34), market_state (12), regimes, splits, panel, qa,
                        placebo (answers shuffled in 20-day blocks)
   model/               agent MLP, scheduler (window encoders + attention + head), DetMASO,
@@ -201,11 +255,15 @@ src/detmaso/
   eval/                metrics, top-decile backtest, Shapley interaction, report, test lock,
                        compare (+ compare_plots): variants side by side on validation,
                        ledger (try ledger), guard (deflated Sharpe and IC, the rules as code),
-                       scheduler_diag (training-day usage and routing)
+                       scheduler_diag (training-day usage and routing),
+                       trading (turnover, costs, blocked trades, long-short), walkforward (evaluation and report),
+                       wf_stats (metrics and the stratified paired resampling), wf_compare (Rules WK and WP), wf_plots
+  walkforward/         folds (layout, purges, test-period guard, per-fold moods), runner (fold x seed jobs, parallel)
   cli.py               prepare | train | evaluate | usage | compare
 tests/                 the plan's 30 checks plus the post-MVP ones (frozen paper config, golden training
                        run, single network, config inheritance, comparison statistics, balance penalty,
-                       placebo, deflated metrics, try ledger, rules)
+                       placebo, deflated metrics, try ledger, rules, walk-forward folds and runner, trading,
+                       the keep rule)
 ```
 
 ## Copyright

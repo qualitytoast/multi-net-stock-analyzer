@@ -8,6 +8,15 @@
   detmaso compare  --runs configs/csi300.yaml:final configs/csi300_single_mlp.yaml:single_mlp \
                    --reference final --out results/csi300/single_vs_ensemble    (validation only)
 
+Walk-forward (docs/RULES.md, "Walk-forward evaluation"; configs with a `walkforward` section):
+
+  detmaso prepare  --config configs/walkforward/paper.yaml
+  detmaso train    --config configs/walkforward/paper.yaml --tag wf [--jobs 8] [--folds 2013 ...]
+  detmaso evaluate --config configs/walkforward/paper.yaml --tag wf --split walkforward
+  detmaso compare  --split walkforward --runs A.yaml:wf B.yaml:wf_b --reference wf --out DIR \
+                   [--rule keep --candidate TAG (--neighbor TAG | --no-tunable-setting) [--target-years 2015 ...]]
+                   [--rule placebo]
+
 A run group (runs/<market>/<tag>/) belongs to one configuration: training refuses to add to a group
 trained with a different config hash, and evaluation refuses a config that does not match the group.
 
@@ -74,6 +83,14 @@ def cmd_train(cfg: Config, args) -> None:
     from detmaso.eval.lock import lock_path
     from detmaso.train.trainer import train_seed
 
+    if cfg.is_walkforward:
+        from detmaso.walkforward.runner import default_jobs, train_walkforward
+
+        train_walkforward(cfg, args.config, args.tag, args.seeds, args.folds, args.jobs or default_jobs(), ledger.ledger_path(cfg.market))
+        return
+    if args.folds or args.jobs:
+        raise SystemExit("--folds and --jobs are for walk-forward configs only")
+
     lock = lock_path(cfg)
     if lock.exists() and any(e["tag"] == args.tag for e in json.loads(lock.read_text())["entries"]):
         raise SystemExit(f"run group '{args.tag}' was already evaluated on the test period; train under a new --tag")
@@ -98,6 +115,16 @@ def cmd_train(cfg: Config, args) -> None:
 
 def cmd_evaluate(cfg: Config, args) -> None:
     from detmaso.eval.report import evaluate_and_report
+
+    if cfg.is_walkforward or args.split == "walkforward":
+        if not (cfg.is_walkforward and args.split == "walkforward"):
+            raise SystemExit("walk-forward configs are evaluated with --split walkforward, and only they are")
+        from detmaso.eval import ledger
+        from detmaso.eval.walkforward import evaluate_walkforward
+
+        path = evaluate_walkforward(cfg, args.config, args.tag, args.seeds, args.folds, ledger.ledger_path(cfg.market))
+        log.info("walk-forward report written to %s", path)
+        return
 
     trained = _group_hash(cfg, args.tag)
     if trained != cfg.hash():
@@ -147,6 +174,8 @@ def cmd_usage(args) -> None:
     from detmaso.eval.scheduler_diag import summarize, write_usage
 
     runs = _parse_runs(args.runs)
+    if any(cfg.is_walkforward for cfg, _, _ in runs):
+        raise SystemExit("usage reads validation-period run groups; walk-forward groups report their moods in `evaluate --split walkforward`")
     summaries = []
     for cfg, config_path, tag in runs:
         path = write_usage(cfg, tag)
@@ -200,9 +229,22 @@ def cmd_compare(args) -> None:
     from detmaso.eval import ledger
     from detmaso.eval.compare import run_compare
 
+    if args.split == "walkforward":
+        from detmaso.eval.wf_compare import run_wf_compare
+
+        runs = _parse_runs(args.runs)
+        path = run_wf_compare(runs, args.reference, Path(args.out), rule=args.rule, candidate=args.candidate, neighbor=args.neighbor,
+                              no_setting=args.no_tunable_setting, target_years=args.target_years,
+                              ledger_path=ledger.ledger_path(runs[0][0].market))  # fmt: skip
+        log.info("comparison written to %s", path)
+        return
     if args.split != "valid":
-        raise SystemExit("comparisons use the validation period only; the test period is never used to compare variants")
+        raise SystemExit("comparisons use the validation period or walk-forward folds only; the test period is never used to compare variants")
+    if args.rule not in (None, "scheduler_balance") or args.candidate or args.neighbor or args.target_years or args.no_tunable_setting:
+        raise SystemExit("--rule keep/placebo, --candidate, --neighbor, --target-years and --no-tunable-setting are for --split walkforward")
     runs = _parse_runs(args.runs)
+    if any(cfg.is_walkforward for cfg, _, _ in runs):
+        raise SystemExit("walk-forward run groups are compared with --split walkforward")
     path = run_compare(runs, reference=args.reference, out_dir=Path(args.out), rule=args.rule, ledger_path=ledger.ledger_path(runs[0][0].market))
     log.info("comparison written to %s", path)
 
@@ -214,11 +256,18 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--runs", nargs="+", metavar="CONFIG:TAG", help="compare / usage: the run groups")
     parser.add_argument("--reference", help="compare: tag of the reference run group (default: the first)")
     parser.add_argument("--out", help="compare (required) / usage (optional): output directory")
-    parser.add_argument("--rule", choices=["scheduler_balance"], default=None, help="compare: apply this docs/RULES.md rule set")
+    parser.add_argument("--rule", choices=["scheduler_balance", "keep", "placebo"], default=None, help="compare: apply this docs/RULES.md rule set")
+    parser.add_argument("--candidate", help="compare --rule keep: tag of the run group judged against the reference")
+    k4 = parser.add_mutually_exclusive_group()
+    k4.add_argument("--neighbor", help="compare --rule keep: tag of the next setting over (Rule WK, K4)")
+    k4.add_argument("--no-tunable-setting", action="store_true", help="compare --rule keep: the change has no tunable setting")
+    parser.add_argument("--target-years", type=int, nargs="+", default=None, help="compare --rule keep: years a targeted change declared in advance")
+    parser.add_argument("--jobs", type=int, default=None, help="train (walk-forward): parallel jobs (default: CPU count - 2)")
+    parser.add_argument("--folds", type=int, nargs="+", default=None, help="train / evaluate (walk-forward): only these test years")
     parser.add_argument("--grid", action="store_true", help="usage: apply Rule G to the given pilot runs")
     parser.add_argument("--seeds", type=int, nargs="+", default=None, help="default: all seeds in the config")
     parser.add_argument("--tag", default=None, help="run group name, e.g. dev or final (default: dev)")
-    parser.add_argument("--split", choices=["valid", "test"], default="valid")
+    parser.add_argument("--split", choices=["valid", "test", "walkforward"], default="valid")
     parser.add_argument("--unlock-test", action="store_true")
     parser.add_argument("--extra-test-run", default=None, metavar="REASON", help="record an additional test-period opening")
     parser.add_argument("--rebuild-raw", action="store_true")

@@ -104,8 +104,43 @@ def write_data_report(data: PreparedData, cfg: Config) -> Path:
         j = p.feature_names.index(name)
         ic = daily_spearman(p.X[pos, :, j].numpy(), y, m)
         rows.append(f"| {name} | {np.nanmean(ic):+.4f} |")
-    lines += ["| Feature | Mean daily IC 2012-2022 |", "|---|---|", *rows]
+    fit = data.splits.train_fit
+    lines += [f"| Feature | Mean daily IC {fit[0].year}-{fit[-1].year} |", "|---|---|", *rows]
+    if cfg.is_walkforward:
+        lines += _per_year_history(data, cfg)
 
     path = artifacts_dir(cfg) / "data_report.md"
     path.write_text("\n".join(lines) + "\n")
     return path
+
+
+def _per_year_history(data: PreparedData, cfg: Config) -> list[str]:
+    """Walk-forward configs: per-year coverage and data-error checks over the whole history (before the test period)."""
+    from detmaso.data.returns import returns_one_day
+
+    p = data.panel
+    universe = data.masks["universe"]
+    ret = returns_one_day(data.raw.fields["close"])
+    rows = []
+    pre_test = p.dates[p.dates < pd.Timestamp(cfg.splits.test[0])]
+    for year in sorted(set(pre_test.year)):
+        days = pre_test[pre_test.year == year]
+        pos = p.date_pos(days).numpy()
+        uni = p.universe[pos].sum(1).numpy()
+        lab = p.label_ok[pos].sum(1).numpy()
+        u = universe.loc[days]
+        missing = np.mean([float((frame.loc[days].isna() & u).to_numpy().sum()) for frame in data.features_raw.values()]) / max(1, u.to_numpy().sum())
+        big = int((ret.loc[days].abs().where(u) > 0.21).to_numpy().sum())
+        rows.append(f"| {year} | {len(days)} | {uni.min()} | {np.median(uni):.0f} | {np.median(lab):.0f} | {missing:.2%} | {big} |")
+    return [
+        "",
+        "## Per year (walk-forward history check)",
+        "",
+        "Universe = index members that traded the day before; missing = average share of universe stock-days with a missing",
+        "feature (before filling with 0); moves > 21% = universe stock-days whose one-day return exceeds every price limit",
+        "(possible data errors, or days without a limit such as a stock's first trading days).",
+        "",
+        "| Year | Days | Universe min | Universe median | Labelled median | Missing features | Moves > 21% |",
+        "|---|---|---|---|---|---|---|",
+        *rows,
+    ]

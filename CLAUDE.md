@@ -18,7 +18,8 @@ Guards (use whenever the model is changed or tuned):
   - its average gain across all walk-forward years has a 95% range entirely above 0;
   - it wins in at least 8 of 11 years. For a change aimed at specific markets (for example crash years), it must instead win in most of those years and be no worse (95% range not entirely below 0) in the rest. Say which years it targets before running;
   - at least 4 of 5 seeds show a gain on average;
-  - if the change has a tunable setting, the next setting over also shows a gain.
+  - if the change has a tunable setting, the next setting over also shows a gain;
+  - its after-cost Sharpe gain (realistic costs, with blocked trades) has a 95% range that is not entirely below 0.
   Until walk-forward exists, a change can only be "kept for re-check" or "dropped".
 
 Bookkeeping:

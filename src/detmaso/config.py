@@ -3,10 +3,12 @@
 Settings added after the paper reproduction are declared with ``post_paper(default)``. Their default
 reproduces the paper method exactly, and while a flag keeps its default it is left out of the config
 hashes, so the paper config keeps the hash recorded in locks/<market>_test.json. A ``label(...)``
-field is descriptive only and never hashed.
+field is descriptive only and never hashed; an ``eval_only(...)`` section (trading costs) only changes how
+trained models are scored, so it is never hashed either (changing it never retrains or creates a new try).
 
 A YAML config may start from another one with ``base: other.yaml`` (a path relative to the file) and
-override only what differs; nested sections are merged key by key.
+override only what differs; nested sections are merged key by key. ``base`` may also be a list, merged in
+order (later files win), e.g. ``base: [../csi300_single_mlp.yaml, _layer.yaml]`` for a walk-forward variant.
 """
 
 from __future__ import annotations
@@ -17,11 +19,13 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pandas as pd
 import yaml
 
 MODEL_KINDS = ("detmaso", "single_mlp")
 BALANCE_TARGETS = ("uniform", "regime")
-_POST_PAPER, _LABEL = "post_paper", "label"
+WF_MOODS = ("per_fold",)
+_POST_PAPER, _LABEL, _EVAL = "post_paper", "label", "eval"
 
 
 def post_paper(default):
@@ -32,6 +36,11 @@ def post_paper(default):
 def label(default):
     """Descriptive metadata that does not affect results; never part of a config hash."""
     return field(default=default, metadata={"hash": _LABEL})
+
+
+def eval_only(factory):
+    """Settings that only change how trained models are scored (never part of a config hash)."""
+    return field(default_factory=factory, metadata={"hash": _EVAL})
 
 
 @dataclass(frozen=True)
@@ -164,6 +173,66 @@ class BacktestConfig:
 
 
 @dataclass(frozen=True)
+class WalkForwardConfig:
+    """Walk-forward evaluation (docs/RULES.md, Rule WL); the section is absent (None) in every other config.
+
+    Fold Y (first_test_year <= Y <= last_test_year): train from splits.train[0] to the end of year Y - 2,
+    early-stop on year Y - 1, test on year Y. The last fold's test window runs on to ``end``, which must lie
+    before the locked test period.
+    """
+
+    first_test_year: int = 2013
+    last_test_year: int = 2023
+    end: str = "2024-02-28"
+    early_stop_years: int = 1  # fixed: early stopping on the one calendar year before the test year (decision D4)
+    moods: str = "per_fold"  # Rule WL: K-means moods and scheduler scaling refit on each fold's pre-test days
+
+    def __post_init__(self):
+        if self.moods not in WF_MOODS:
+            raise ValueError(f"walkforward.moods must be one of {WF_MOODS}, got {self.moods!r}")
+        if self.early_stop_years != 1:
+            raise ValueError(
+                f"walkforward.early_stop_years must be 1, got {self.early_stop_years}: every fold early-stops on the one "
+                "calendar year before its test year (decision D4; docs/RULES.md, Rule WL)"
+            )
+        if self.last_test_year < self.first_test_year:
+            raise ValueError("walkforward.last_test_year must be >= first_test_year")
+        end = pd.Timestamp(self.end)
+        if not (pd.Timestamp(f"{self.last_test_year}-01-01") <= end < pd.Timestamp(f"{self.last_test_year + 2}-01-01")):
+            raise ValueError(f"walkforward.end {self.end} must fall in {self.last_test_year} or the year after")
+
+    @property
+    def years(self) -> list[int]:
+        return list(range(self.first_test_year, self.last_test_year + 1))
+
+
+@dataclass(frozen=True)
+class TradingConfig:
+    """How trained models are traded in the walk-forward reports (docs/RULES.md, Rule WT); never hashed.
+
+    Rates are in basis points (1 bp = 0.01%) of the traded value, charged on every buy and every sell.
+    Realistic setting: buys pay fee_bps + slippage_bps; sells pay the same plus the stamp duty in force on
+    the trade date (stamp_duty_bps: (first date, bps) steps; a date before the first step is an error).
+    """
+
+    flat_bps: tuple[float, ...] = (0.0, 10.0, 20.0)
+    fee_bps: float = 3.0  # broker commission + exchange, management and transfer fees, each side
+    slippage_bps: float = 5.0  # each side
+    stamp_duty_bps: tuple[tuple[str, float], ...] = (("2008-09-19", 10.0), ("2023-08-28", 5.0))  # sells only
+
+    def __post_init__(self):
+        object.__setattr__(self, "flat_bps", tuple(float(x) for x in self.flat_bps))
+        object.__setattr__(self, "fee_bps", float(self.fee_bps))
+        object.__setattr__(self, "slippage_bps", float(self.slippage_bps))
+        object.__setattr__(self, "stamp_duty_bps", tuple((str(d), float(b)) for d, b in self.stamp_duty_bps))
+        dates = [pd.Timestamp(d) for d, _ in self.stamp_duty_bps]
+        if not dates or dates != sorted(dates):
+            raise ValueError("trading.stamp_duty_bps needs at least one (date, bps) step, in date order")
+        if min(self.flat_bps, default=0.0) < 0 or self.fee_bps < 0 or self.slippage_bps < 0:
+            raise ValueError("trading costs must be >= 0")
+
+
+@dataclass(frozen=True)
 class Config:
     market: str
     run_dir: str
@@ -177,10 +246,15 @@ class Config:
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     # Whole section left out of both hashes while off; never part of data_hash (the prepared data is reused).
     placebo: PlaceboConfig = post_paper(PlaceboConfig())
+    # Walk-forward evaluation (docs/RULES.md, Rule WL); None = the single train / validation / test split.
+    walkforward: WalkForwardConfig | None = post_paper(None)
+    trading: TradingConfig = eval_only(TradingConfig)
     variant: str = label("paper")  # name shown in reports and comparisons
 
     def __post_init__(self):
         m, loss = self.model, self.loss
+        if self.walkforward is not None:
+            self._check_walkforward()
         if self.variant == "paper" and _post_paper_changed(self):
             raise ValueError("this config changes post-paper flags, so it is not the paper method: give it a variant name")
         if m.kind == "single_mlp" and (loss.c_div != 0 or loss.c_ent != 0):
@@ -192,6 +266,18 @@ class Config:
         if loss.balance_target != "uniform" and loss.c_bal == 0:
             raise ValueError("loss.balance_target only matters with loss.c_bal > 0")
 
+    def _check_walkforward(self) -> None:
+        wf, sp = self.walkforward, self.splits
+        if not self.train.validate:
+            raise ValueError("walk-forward folds early-stop on their own year, so train.validate must stay true")
+        if pd.Timestamp(wf.end) >= pd.Timestamp(sp.test[0]):
+            raise ValueError(f"walkforward.end {wf.end} must lie before the locked test period ({sp.test[0]})")
+        first_train_year = wf.first_test_year - wf.early_stop_years - 1
+        if pd.Timestamp(sp.train[0]).year > first_train_year:
+            raise ValueError(f"the first fold needs training data in {first_train_year}; splits.train starts {sp.train[0]}")
+        if sp.purge_days < self.features.horizon:
+            raise ValueError("walk-forward purges must cover the label horizon (splits.purge_days >= features.horizon)")
+
     @property
     def is_placebo(self) -> bool:
         return self.placebo.shuffle_seed is not None
@@ -199,6 +285,10 @@ class Config:
     @property
     def run_path(self) -> Path:
         return Path(self.run_dir).expanduser()
+
+    @property
+    def is_walkforward(self) -> bool:
+        return self.walkforward is not None
 
     def to_dict(self) -> dict:
         """Every field, including labels and post-paper flags at their defaults (written to config.json)."""
@@ -236,13 +326,14 @@ def _post_paper_changed(obj) -> bool:
 
 
 def _hash_view(obj):
-    """What the config hashes see: labels dropped, post-paper flags dropped while at their default."""
+    """What the config hashes see: labels and evaluation-only settings dropped, post-paper flags dropped while
+    at their default."""
     if dataclasses.is_dataclass(obj):
         out = {}
         for f in dataclasses.fields(obj):
             value = getattr(obj, f.name)
             rule = f.metadata.get("hash")
-            if rule == _LABEL or (rule == _POST_PAPER and value == _field_default(f)):
+            if rule in (_LABEL, _EVAL) or (rule == _POST_PAPER and value == _field_default(f)):
                 continue
             out[f.name] = _hash_view(value)
         return out
@@ -275,13 +366,19 @@ def _merge(base: dict, override: dict) -> dict:
 
 
 def _read_yaml(path: Path, chain: tuple[Path, ...] = ()) -> dict:
-    """A config file with its ``base:`` chain resolved (base paths are relative to the file)."""
+    """A config file with its ``base:`` chain resolved (base paths are relative to the file; a list of bases
+    is merged in order, later ones winning, and the file itself wins over all of them)."""
     path = path.expanduser().resolve()
     if path in chain:
         raise ValueError("config base cycle: " + " -> ".join(str(p) for p in (*chain, path)))
     raw = yaml.safe_load(path.read_text()) or {}
     base = raw.pop("base", None)
-    return raw if base is None else _merge(_read_yaml(path.parent / base, (*chain, path)), raw)
+    if base is None:
+        return raw
+    merged: dict = {}
+    for b in [base] if isinstance(base, str) else list(base):
+        merged = _merge(merged, _read_yaml(path.parent / b, (*chain, path)))
+    return _merge(merged, raw)
 
 
 _TOP_LEVEL = {f.name for f in dataclasses.fields(Config)}
@@ -304,5 +401,7 @@ def load_config(path: str | Path) -> Config:
         train=_build(TrainConfig, raw.get("train")),
         backtest=_build(BacktestConfig, raw.get("backtest")),
         placebo=_build(PlaceboConfig, raw.get("placebo")),
+        walkforward=None if raw.get("walkforward") is None else _build(WalkForwardConfig, raw["walkforward"]),
+        trading=_build(TradingConfig, raw.get("trading")),
         variant=raw.get("variant", "paper"),
     )

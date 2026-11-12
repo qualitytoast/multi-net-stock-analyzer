@@ -1,7 +1,8 @@
 # Experiments
 
 Every training or evaluation run is logged here: date, config, data used, results, and whether the
-change was kept or dropped. Comparisons use the training and validation periods only; the test period
+change was kept or dropped. Comparisons use the training and validation periods, or the walk-forward folds (history
+from 2008, ending 2024-02-28), only; the test period
 (2024-03-01 to 2026-03-01) is locked and was opened once, for E3 (see `locks/csi300_test.json`).
 
 Every configuration trained with validation switched on is also a counted try in the git-tracked try ledger
@@ -38,6 +39,8 @@ Common to every entry unless stated otherwise:
 | E15 | 2026-11-07 | 12 | Scheduler balance, strength 1 | `configs/scheduler_balance/bal_c1e0.yaml` (`6cf6709dc4c7b083`) | `bal_c1e0` | 0.055 +- 0.016 | dropped (Rule S: no reliable specialists; rule kept by the owner); usage ok, routing fails |
 | E16 | 2026-11-07 | 14 | Scheduler balance, strength 3 | `configs/scheduler_balance/bal_c3e0.yaml` (`2be8c2d2b3b14e8d`) | `bal_c3e0` | 0.054 +- 0.021 | dropped (Rule S: no reliable specialists; rule kept by the owner); usage ok, routing fails |
 | E17 | 2026-11-07 | 15 | Scheduler balance, strength 10 | `configs/scheduler_balance/bal_c1e1.yaml` (`521e530361af914f`) | `bal_c1e1` | 0.036 +- 0.033 | dropped (Rule S: no reliable specialists; rule kept by the owner); usage ok, routing fails |
+| E18 | 2026-11-08 | 6 (rerun) | Walk-forward tooling: retrain the paper config with the new code (regression check) | `configs/csi300.yaml` (`d2a65e9a6a237d2c`) | `paper_rerun3` | identical to E3 | check passed; not a candidate |
+| E19 | 2026-11-08 | - (placebo) | Walk-forward placebo (Rule WP): paper config and single network, 11 folds x 5 seeds on shuffled answers | `configs/walkforward/placebo/` | `runs/csi300_wf`: `placebo`, `placebo_single`, `smoke` | walk-forward IC +0.0010 [-0.0031, +0.0051] and +0.0028 [-0.0025, +0.0081] (not validation) | check passed |
 
 ## E1: stability diagnostics (2026-11-05)
 
@@ -171,3 +174,53 @@ restored and the last-epoch model.
   had one seed whose rare-mood agent was dead (constant output) for long stretches of training.
 - **Kept / dropped:** **dropped**. At the Rule S stop the owner kept the rules as written (2026-11-07), so none of
   the six strengths is carried forward; the penalty stays in the code behind `loss.c_bal`, off by default.
+
+## Walk-forward tooling (2026-11-08, E18-E19)
+
+Plan `make-a-plan-for-melodic-ocean.md` (approved 2026-11-08, decisions D1-D8 all "a"); rules in
+[docs/RULES.md](docs/RULES.md) ("Walk-forward evaluation", Rules WL, WT, WK, WP), fixed before any walk-forward run.
+No walk-forward run on the real answers was made: the first one belongs to the testing phase.
+
+### E18: `paper_rerun3`, regression check
+
+- **Config:** `configs/csi300.yaml` (`d2a65e9a6a237d2c`), unchanged; trained with the walk-forward code, 5 seeds in parallel.
+- **Result:** all 5 models identical to `final` (E3) in every weight, validation-IC curve, epoch count and best epoch;
+  every model file's sha256 equals `locks/csi300_test.json`. Re-evaluating `final` reproduced its validation report,
+  results file and daily series byte for byte.
+- **Kept / dropped:** check passed.
+
+### E19: walk-forward placebo (Rule WP; not tries)
+
+- **Data:** the walk-forward data (`runs/csi300_wf`, data hash `7470fa641726f353`): loaded from 2007-01-01, model dates
+  2008-01-02 onward; the per-year check in [results/csi300/walkforward/data_report.md](results/csi300/walkforward/data_report.md)
+  shows 2008-2011 like the later years (medians of 288-293 stocks per day, under 1% missing features, one one-day move above
+  21% in 2009). Answers shuffled within 20-day blocks (placebo seed 0), as in E10.
+- **Configs:** `configs/walkforward/placebo/paper.yaml` (`9515c4dbd6f711d2`) and `configs/walkforward/placebo/single_mlp.yaml`
+  (`d820628005c10957`); 11 folds (test years 2013-2023, the last to 2024-02-28) x seeds 0-4; moods refit per fold.
+- **Smoke run** (`smoke`, fold 2013, seed 0): about 1 minute of setup (data, shuffled answers, moods of all 11 folds),
+  then 7 s per epoch on the smallest fold with the CPU shared; the evaluation path ran on the real layout.
+- **Training:** all 110 jobs trained, no aborts. Wall time with the CPU shared: 65 min (paper config, 5 jobs at a
+  time), 22 min (single network, 4 at a time).
+- **Results** (11 test years joined; mean +- std over seeds [95% range]):
+
+  | Run group | Average IC | Sharpe, paper backtest | Sharpe after costs | Turnover/day | Long-short (bps/day) |
+  |---|---|---|---|---|---|
+  | `placebo` (paper config) | 0.0010 +- 0.0023 [-0.0031, +0.0051] | 0.29 [-0.28, +0.88] | -0.69 +- 0.15 [-1.23, -0.14] | 37.4% | -0.2 |
+  | `placebo_single` (single network) | 0.0028 +- 0.0015 [-0.0025, +0.0081] | 0.30 [-0.25, +0.89] | -0.40 +- 0.07 [-0.92, +0.16] | 26.4% | 0.1 |
+
+- **Rule WP:** P1 both average-IC ranges contain 0 (pass); P2 Rule WK in both directions says "no improvement"
+  (single minus paper: average gain +0.0018 [-0.0031, +0.0068], 6 of 11 years, 4 of 5 seeds) (pass). **Placebo passed.**
+  One year of one group (2019, paper config) has an IC range just above 0, as chance gives about once in 20 ranges.
+- **Finding for the owner:** the after-cost Sharpe difference (single minus paper) is +0.29 [+0.11, +0.48], entirely
+  above 0, although the gross difference is not (+0.01, [-0.15, +0.18]). On shuffled answers the paper config still
+  replaces 36-40% of its portfolio a day against 24-28% for the single network (every seed), so it pays more costs.
+  K5 therefore also responds to turnover, which is a real property of a model even when there is nothing to predict.
+- **Note (2026-11-11):** the after-cost figures above ("Sharpe after costs" and the after-cost Sharpe difference),
+  like every blocked-trade number in the committed placebo reports, predate the placebo valuation fix (a held stock
+  outside that block's shuffle now earns 0 instead of its real next-day return; docs/RULES.md, "Rule changes").
+  They will be re-evaluated (evaluation only, no retraining) right after this change. The Rule WP verdict does not
+  depend on them: P1 uses IC only and P2 fails on K1 in both directions.
+- **Costs:** on shuffled answers the daily top-10% portfolio's annual return falls from about +4% before costs to
+  -12% (single network) and -18% (paper config) after realistic costs (max drawdown 84-93%); at a flat 10 bps it is
+  -8% and -13%. Blocked trades are rare (0.3-0.4 a day, most in 2015).
+- **Kept / dropped:** check passed. Results: [results/csi300/walkforward/placebo/](results/csi300/walkforward/placebo/).

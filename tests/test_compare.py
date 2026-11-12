@@ -145,7 +145,7 @@ def test_load_variant_refuses_foreign_or_unevaluated_run_groups(tmp_path):
 def test_compare_command_refuses_the_test_split(tmp_path):
     from detmaso.cli import main
 
-    with pytest.raises(SystemExit, match="validation period only"):
+    with pytest.raises(SystemExit, match="the test period is never used to compare"):
         main(["compare", "--runs", "a.yaml:x", "b.yaml:y", "--out", str(tmp_path), "--split", "test"])
 
 
