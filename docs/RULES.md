@@ -225,9 +225,8 @@ Outcome (2026-11-08, EXPERIMENTS E19): **passed**. P1: average IC +0.0010 [-0.00
 after-cost Sharpe difference between the two placebo groups is detectable (+0.29 [+0.11, +0.48]) because their
 turnover differs (37% vs 26% of the portfolio a day), not their gross returns; K5 responds to turnover.
 
-Note (2026-11-11): the committed after-cost placebo figures (this Sharpe difference and every blocked-trade number
-in the placebo reports) predate the placebo valuation fix logged in "Rule changes" and will be re-evaluated
-(evaluation only, no retraining) right after this change. The verdict does not depend on them.
+Note (2026-11-11): re-evaluated with the placebo valuation fix logged in "Rule changes" (evaluation only, same
+models). Only a few 2015 numbers moved, in the second decimal; every figure above and the verdict are unchanged.
 
 ### Deflated metrics for walk-forward results
 
@@ -282,6 +281,6 @@ in the placebo reports) predate the placebo valuation fix logged in "Rule change
     every range built on it, not finite. Now: such days are left out. Reason: consistent with the point estimates
     and with the validation-period resampling. Results whose IC days are all finite do not change.
   - Made after the walk-forward placebo results (E19) were seen. The Rule WP verdict is unaffected: P1 uses IC
-    only, P2 fails on K1 in both directions, and every committed range is finite. The committed after-cost placebo
-    figures predate the valuation correction and will be re-evaluated (evaluation only, no retraining) right after
-    this change.
+    only, P2 fails on K1 in both directions, and every committed range is finite. The committed placebo results
+    were then re-evaluated with the correction (evaluation only, no retraining): only a few 2015 numbers moved, in
+    the second decimal (EXPERIMENTS E19).

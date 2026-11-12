@@ -69,9 +69,8 @@ Last updated: 2026-11-11
     byte for byte.
   - Placebo passed (E19): average IC +0.0010 and +0.0028, both ranges containing 0; "no improvement" both ways. The
     after-cost Sharpe of the two placebo models differs detectably because Det-MASO turns over 37% of its portfolio a
-    day against 26% for the single network. The after-cost placebo figures predate the 2026-11-11 placebo valuation
-    fix (docs/RULES.md, "Rule changes") and are due for re-evaluation (evaluation only); the verdict does not depend
-    on them.
+    day against 26% for the single network. Re-evaluated 2026-11-11 after the placebo valuation fix (docs/RULES.md,
+    "Rule changes"; evaluation only): only a few 2015 numbers moved, in the second decimal.
 
 Test-period checks: q1 (agents stay different) pass; q2 (scheduler does not collapse) **fail**,
 entropy 0.03 of 1.61; q3 (Tail-Risk share 3-7%) **fail**, 2.2%; q4 (Shapley claim) pass, 4 of 5 seeds.

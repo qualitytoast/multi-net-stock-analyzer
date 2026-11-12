@@ -215,11 +215,11 @@ No walk-forward run on the real answers was made: the first one belongs to the t
   above 0, although the gross difference is not (+0.01, [-0.15, +0.18]). On shuffled answers the paper config still
   replaces 36-40% of its portfolio a day against 24-28% for the single network (every seed), so it pays more costs.
   K5 therefore also responds to turnover, which is a real property of a model even when there is nothing to predict.
-- **Note (2026-11-11):** the after-cost figures above ("Sharpe after costs" and the after-cost Sharpe difference),
-  like every blocked-trade number in the committed placebo reports, predate the placebo valuation fix (a held stock
-  outside that block's shuffle now earns 0 instead of its real next-day return; docs/RULES.md, "Rule changes").
-  They will be re-evaluated (evaluation only, no retraining) right after this change. The Rule WP verdict does not
-  depend on them: P1 uses IC only and P2 fails on K1 in both directions.
+- **Re-evaluated 2026-11-11** with the placebo valuation fix (a held stock outside that block's shuffle now earns 0
+  instead of its real next-day return; docs/RULES.md, "Rule changes"): evaluation only, same models. Only 2015
+  moved: its after-cost Sharpe -0.34 to -0.33 (paper config; single network -0.05, its spread 0.14 to 0.15), its
+  excess return by 0.1 points, and the joined 20-bps annual return with blocking -27.7% to -27.6% (paper config).
+  Every other number above and the Rule WP verdict are unchanged; the committed reports are the re-evaluated ones.
 - **Costs:** on shuffled answers the daily top-10% portfolio's annual return falls from about +4% before costs to
   -12% (single network) and -18% (paper config) after realistic costs (max drawdown 84-93%); at a flat 10 bps it is
   -8% and -13%. Blocked trades are rare (0.3-0.4 a day, most in 2015).

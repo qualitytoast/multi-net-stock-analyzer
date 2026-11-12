@@ -59,8 +59,8 @@ the 2023 stamp-duty cut), daily turnover, blocked trades at price limits, the lo
 applied by code. Its placebo on shuffled answers found nothing (average IC +0.001 and +0.003, both ranges containing
 0). It did show that trading costs matter a lot for this daily-rebalanced portfolio: even without any signal it
 replaces 26-37% of its holdings a day, and realistic costs turn an annual return of about +4% into -12% and -18%.
-(These after-cost placebo figures predate the 2026-11-11 placebo valuation fix and are due for re-evaluation;
-docs/RULES.md, "Rule changes".)
+(Re-evaluated 2026-11-11 after the placebo valuation fix in docs/RULES.md, "Rule changes": only a few 2015
+numbers moved, in the second decimal.)
 Details: [placebo
 comparison](results/csi300/walkforward/placebo/comparison.md), rules in [docs/RULES.md](docs/RULES.md).
 
