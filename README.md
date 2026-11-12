@@ -191,9 +191,11 @@ Code refuses any fold that would touch the locked test period.
 uv run detmaso prepare  --config configs/walkforward/paper.yaml          # data from 2007 into runs/csi300_wf
 uv run detmaso train    --config configs/walkforward/paper.yaml --tag wf --jobs 8   # 11 folds x 5 seeds, resumable
 uv run detmaso evaluate --config configs/walkforward/paper.yaml --tag wf --split walkforward
+uv run detmaso train    --config configs/walkforward/single_mlp.yaml --tag wf_single --jobs 8   # each config has its own tag
+uv run detmaso evaluate --config configs/walkforward/single_mlp.yaml --tag wf_single --split walkforward
 uv run detmaso compare  --split walkforward --reference wf --out results/csi300/walkforward/<name> \
-                        --runs configs/walkforward/paper.yaml:wf configs/walkforward/single_mlp.yaml:wf \
-                        --rule keep --candidate <tag> (--neighbor <tag> | --no-tunable-setting) [--target-years 2015 2016]
+                        --runs configs/walkforward/paper.yaml:wf configs/walkforward/single_mlp.yaml:wf_single \
+                        --rule keep --candidate wf_single --no-tunable-setting [--target-years 2015 2016]
 ```
 
 - **Report** (`report_wf.md`): IC by test year and over all years with 95% ranges, the paper backtest's Sharpe,
@@ -203,8 +205,9 @@ uv run detmaso compare  --split walkforward --reference wf --out results/csi300/
   facts, the try number, deflated Sharpe and deflated IC.
 - **Keep rule as code.** `compare --rule keep` applies the CLAUDE.md keep rule (Rule WK): the average IC gain's 95%
   range above 0, at least 8 of 11 years won (or the targeted form), at least 4 of 5 seeds gaining, the next setting
-  over also gaining, and the after-cost Sharpe not detectably worse. `--rule placebo` applies Rule WP to two placebo
-  run groups. Both refuse to give a verdict when a number they need could not be computed (not finite).
+  over also gaining (`--neighbor <tag>` names its run group; `--no-tunable-setting` says the change has none), and
+  the after-cost Sharpe not detectably worse. `--rule placebo` applies Rule WP to two placebo run groups. Both
+  refuse to give a verdict when a number they need could not be computed (not finite).
 - A walk-forward configuration is one try in the ledger; each fold and seed is a job (`<tag>:Y<year>:s<seed>`,
   marked `aborted: <reason>` when it fails or the run is interrupted, and retrained by the next `train`), and
   `evaluate --split walkforward` adds its walk-forward metrics before it computes the report's deflated numbers.

@@ -13,7 +13,7 @@ Walk-forward (docs/RULES.md, "Walk-forward evaluation"; configs with a `walkforw
   detmaso prepare  --config configs/walkforward/paper.yaml
   detmaso train    --config configs/walkforward/paper.yaml --tag wf [--jobs 8] [--folds 2013 ...]
   detmaso evaluate --config configs/walkforward/paper.yaml --tag wf --split walkforward
-  detmaso compare  --split walkforward --runs A.yaml:wf B.yaml:wf --reference wf --out DIR \
+  detmaso compare  --split walkforward --runs A.yaml:wf B.yaml:wf_b --reference wf --out DIR \
                    [--rule keep --candidate TAG (--neighbor TAG | --no-tunable-setting) [--target-years 2015 ...]]
                    [--rule placebo]
 

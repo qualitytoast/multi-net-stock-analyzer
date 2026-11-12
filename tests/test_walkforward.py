@@ -306,8 +306,9 @@ def test_evaluation_series_reproduce_the_paper_backtest_and_purge_ic(trained):
     assert "Try #1 of" in report and "Deflated Sharpe" in report and "## By test year" in report
 
 
-def test_compare_reads_evaluated_groups_and_refuses_mixing(trained):
-    """The keep and placebo verdicts themselves are checked on planted run groups in tests/test_keep_rule.py."""
+def test_compare_reads_evaluated_groups_and_refuses_a_group_of_another_config(trained):
+    """The keep and placebo verdicts themselves, and the refusal to mix placebo and real run groups, are checked on
+    planted run groups in tests/test_keep_rule.py."""
     from detmaso.eval.wf_compare import run_wf_compare
     from detmaso.eval.wf_stats import WFError
 
@@ -321,9 +322,9 @@ def test_compare_reads_evaluated_groups_and_refuses_mixing(trained):
     assert set(payload["advantage"]["wf_single"]["yearly"]) == {"2018", "2019"}
     with pytest.raises(WFError, match="needs --neighbor"):
         run_wf_compare(runs, "wf", out, rule="keep", candidate="single", ledger_path=None, n_boot=50)
-    placebo = dataclasses.replace(single, placebo=dataclasses.replace(single.placebo, shuffle_seed=0), variant="placebo_single")
-    with pytest.raises(WFError):
-        run_wf_compare([(cfg, "wf.yaml", "wf"), (placebo, "single.yaml", "single")], "wf", out, n_boot=50)
+    other = dataclasses.replace(single, placebo=dataclasses.replace(single.placebo, shuffle_seed=0), variant="placebo_single")
+    with pytest.raises(WFError, match="run group 'single' was not trained with single.yaml \\(config hash mismatch\\)"):
+        run_wf_compare([(cfg, "wf.yaml", "wf"), (other, "single.yaml", "single")], "wf", out, n_boot=50)
 
 
 def test_identical_run_groups_never_count_as_an_improvement(trained):
