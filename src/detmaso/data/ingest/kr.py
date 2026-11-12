@@ -14,7 +14,8 @@ change against the exchange's base price, market cap, and the market label. This
         --dump-bin <dump_bin.py> --qlib-dir ~/.qlib/qlib_data/kr_data_d3b7036 \
         --report results/kr200/conversion_report.md
 
-``scripts/get_kr_data.sh`` fetches and verifies both inputs. The download is untrusted data: it is only ever read
+``scripts/get_kr_data.sh`` fetches and verifies both inputs; the pins it and this module use are written once, in
+``scripts/kr_data.pins``. The download is untrusted data: it is only ever read
 as parquet, and its path is an argument. The output follows the China archive's conventions, so
 ``detmaso.data.qlib_io.load_raw_panel`` reads it unchanged:
 
@@ -45,12 +46,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from detmaso.data.ingest.pins import SCRIPTS_DIR, read_pins
 from detmaso.mdtable import md_table
 
-# Pins (the same values as in scripts/get_kr_data.sh; a test checks that they agree) --------------------------
-PINNED_COMMIT = "d3b703628e5a73112111d8bc43439f950762f67e"  # FinanceData/marcap
-DUMP_BIN_COMMIT = "b87a2c294d364a33fb739359886acffe8ec907d1"  # microsoft/qlib, scripts/dump_bin.py
-DUMP_BIN_SHA256 = "b8f34c57ce1ef4b1772f3909735e66058f21b25bd7ab8a5f16318822401fe53f"
+# Pins (scripts/kr_data.pins, the file scripts/get_kr_data.sh sources) ------------------------------------------
+PINS = read_pins(SCRIPTS_DIR / "kr_data.pins")
+PINNED_COMMIT = PINS["MARCAP_COMMIT"]  # FinanceData/marcap
+DUMP_BIN_COMMIT = PINS["QLIB_COMMIT"]  # microsoft/qlib, scripts/dump_bin.py
+DUMP_BIN_SHA256 = PINS["DUMP_BIN_SHA256"]
 
 # Rule ND -----------------------------------------------------------------------------------------------------
 CHECK_END = pd.Timestamp("2024-03-01")  # every statistic and check uses only dates before the locked test period

@@ -3,15 +3,17 @@ match and the 95.0% bar, on small synthetic inputs. The pinned files are never r
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 import zipfile
 from datetime import date
-from pathlib import Path
 
 import pytest
 
 from detmaso.data.ingest import us_coverage as uc
 from detmaso.data.ingest.us_coverage import CoverageError, Listing
+from tests.conftest import ROOT
 
 D = date.fromisoformat
 
@@ -296,13 +298,15 @@ def test_the_command_line_refuses_files_that_are_not_the_pinned_ones(tmp_path, c
     assert r.verdict and uc.totals(r.coverage) == (4218, 4218, 4218, 4218) and (out / uc.REPORT_FILE).exists()
 
 
-def test_the_fetch_script_and_the_check_pin_the_same_inputs():
-    script = (Path(__file__).parents[1] / "scripts" / "get_us_coverage_data.sh").read_text()
-    pins = dict(re.findall(r'^([A-Z0-9_]+)="([^"]*)"$', script, flags=re.M))
-    assert pins["SP500_COMMIT"] == uc.PINNED_SP500_COMMIT
-    assert pins["SP500_FILE"] == uc.PINNED_MEMBERSHIP_FILE
-    assert pins["SP500_FILE_SHA256"] == uc.PINNED_MEMBERSHIP_SHA256
-    assert pins["TIINGO_DOWNLOADED_AT"] == uc.PINNED_TIINGO_DOWNLOADED_AT
-    assert pins["TIINGO_ZIP_SHA256"] == uc.PINNED_TIINGO_ZIP_SHA256
-    assert pins["TIINGO_URL"] == uc.TIINGO_URL
-    assert pins["TIINGO_DATE"] == uc.PINNED_TIINGO_DOWNLOADED_AT[:10]
+def test_the_fetch_script_and_the_check_use_the_same_pins(tmp_path):
+    """``--print-pins`` is the script's no-network mode: it prints the pins it sourced, which must be the ones this
+    module read from scripts/us_coverage_data.pins. Nothing is fetched or written."""
+    env = {**os.environ, "SP500_DIR": str(tmp_path / "sp500"), "TIINGO_ROOT": str(tmp_path / "tiingo")}
+    done = subprocess.run([str(ROOT / "scripts/get_us_coverage_data.sh"), "--print-pins"], capture_output=True, text=True, env=env)
+    assert done.returncode == 0, done.stderr
+    assert dict(line.split("=", 1) for line in done.stdout.splitlines()) == uc.PINS and done.stderr == ""
+    assert not any(tmp_path.iterdir())
+    assert re.fullmatch(r"[0-9a-f]{40}", uc.PINNED_SP500_COMMIT)
+    assert re.fullmatch(r"[0-9a-f]{64}", uc.PINNED_MEMBERSHIP_SHA256) and re.fullmatch(r"[0-9a-f]{64}", uc.PINNED_TIINGO_ZIP_SHA256)
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", uc.PINNED_TIINGO_DOWNLOADED_AT)
+    assert uc.PINNED_MEMBERSHIP_FILE.endswith(".csv") and uc.TIINGO_URL.startswith("https://")

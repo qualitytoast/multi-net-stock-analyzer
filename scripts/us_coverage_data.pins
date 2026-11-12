@@ -1,0 +1,10 @@
+# Pinned inputs of the free US coverage check (docs/RULES.md, Rule UC): one KEY="value" per line.
+# Sourced by scripts/get_us_coverage_data.sh and read by src/detmaso/data/ingest/us_coverage.py. Change a pin here
+# and nowhere else; a pin change is a rule change (docs/RULES.md, "Rule changes").
+SP500_REPO="https://github.com/fja05680/sp500.git"
+SP500_COMMIT="a2430f2af0c79ddf0748e91de11bdeb1616ab5a7"
+SP500_FILE="S&P 500 Historical Components & Changes (Updated).csv"
+SP500_FILE_SHA256="36326709d46d6cd25834de5df457b16f5f96fad3a06b9beac28f7b88aa0b0d54"
+TIINGO_URL="https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
+TIINGO_DOWNLOADED_AT="2026-11-12T22:24:27Z"
+TIINGO_ZIP_SHA256="3d33d870111072d8a87de8a3f73cb3b30f00ec928fa517846ae29b614822f800"

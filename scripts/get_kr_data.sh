@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Download and verify the pinned South Korea source data (docs/RULES.md, Rules ND and KG):
 # FinanceData/marcap (daily snapshots of every Korean stock since 1995), at one pinned git commit.
+# The pins (commits and hashes) are in scripts/kr_data.pins, which the converter reads too; change them there only.
 # Safe to re-run: it skips the fetch when the commit is already on disk and re-verifies every hash.
 #
 # The download is untrusted data. Nothing in it is ever run or imported; the converter
@@ -11,21 +12,27 @@
 # Usage:
 #   scripts/get_kr_data.sh                   fetch (if needed) and verify every yearly file against the manifest
 #   scripts/get_kr_data.sh --write-manifest  (maintainer, once per pin) write the manifest from the fetched files
+#   scripts/get_kr_data.sh --print-pins      print the pins, one KEY=value per line, and exit; fetches nothing
 set -euo pipefail
 
-COMMIT="d3b703628e5a73112111d8bc43439f950762f67e"  # newest commit of the default branch on 2026-11-12
-REPO_URL="https://github.com/FinanceData/marcap.git"
-# Qlib's own CSV-to-binary writer, used by the converter (never imported; run as a separate process with -I).
-QLIB_COMMIT="b87a2c294d364a33fb739359886acffe8ec907d1"
-DUMP_BIN_SHA256="b8f34c57ce1ef4b1772f3909735e66058f21b25bd7ab8a5f16318822401fe53f"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DL_DIR="${DL_DIR:-$HOME/data/marcap/$COMMIT}"
+# MARCAP_REPO, MARCAP_COMMIT, QLIB_COMMIT (Qlib's own CSV-to-binary writer, used by the converter; never imported,
+# run as a separate process with -I) and DUMP_BIN_SHA256.
+source "$SCRIPT_DIR/kr_data.pins"
+
+if [[ "${1:-}" == "--print-pins" ]]; then
+  for name in MARCAP_REPO MARCAP_COMMIT QLIB_COMMIT DUMP_BIN_SHA256; do
+    printf '%s=%s\n' "$name" "${!name}"
+  done
+  exit 0
+fi
+
+DL_DIR="${DL_DIR:-$HOME/data/marcap/$MARCAP_COMMIT}"
 MANIFEST="${MANIFEST:-$SCRIPT_DIR/kr_data.sha256}"
 DATA_GLOB="data/marcap-*.parquet"  # one file per year, 1995 onward
 TOOLS_DIR="${TOOLS_DIR:-$HOME/data/tools}"
 DUMP_BIN="$TOOLS_DIR/qlib_${QLIB_COMMIT:0:7}/dump_bin.py"  # in a directory of its own
-QLIB_DIR="${QLIB_DIR:-$HOME/.qlib/qlib_data/kr_data_${COMMIT:0:7}}"
+QLIB_DIR="${QLIB_DIR:-$HOME/.qlib/qlib_data/kr_data_${MARCAP_COMMIT:0:7}}"
 
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 
@@ -34,25 +41,25 @@ git_safe() {
   GIT_TERMINAL_PROMPT=0 GIT_LFS_SKIP_SMUDGE=1 git -c core.hooksPath=/dev/null -c advice.detachedHead=false "$@"
 }
 
-if [[ "$(git_safe -C "$DL_DIR" rev-parse HEAD 2>/dev/null || true)" != "$COMMIT" ]]; then
+if [[ "$(git_safe -C "$DL_DIR" rev-parse HEAD 2>/dev/null || true)" != "$MARCAP_COMMIT" ]]; then
   if [[ -e "$DL_DIR" && -n "$(ls -A "$DL_DIR" 2>/dev/null)" && ! -d "$DL_DIR/.git" ]]; then
     echo "refusing to fetch into a non-empty directory that is not a git checkout: $DL_DIR" >&2
     exit 1
   fi
   mkdir -p "$DL_DIR"
   git_safe -C "$DL_DIR" init -q
-  if ! git_safe -C "$DL_DIR" cat-file -e "$COMMIT^{commit}" 2>/dev/null; then
+  if ! git_safe -C "$DL_DIR" cat-file -e "$MARCAP_COMMIT^{commit}" 2>/dev/null; then
     git_safe -C "$DL_DIR" remote remove origin 2>/dev/null || true
-    git_safe -C "$DL_DIR" remote add origin "$REPO_URL"
-    git_safe -C "$DL_DIR" fetch -q --depth 1 origin "$COMMIT"  # exactly this commit, no history
+    git_safe -C "$DL_DIR" remote add origin "$MARCAP_REPO"
+    git_safe -C "$DL_DIR" fetch -q --depth 1 origin "$MARCAP_COMMIT"  # exactly this commit, no history
   fi
-  git_safe -C "$DL_DIR" checkout -q --detach "$COMMIT"
+  git_safe -C "$DL_DIR" checkout -q --detach "$MARCAP_COMMIT"
 fi
-if [[ "$(git_safe -C "$DL_DIR" rev-parse HEAD)" != "$COMMIT" ]]; then
-  echo "checkout is not at the pinned commit $COMMIT" >&2
+if [[ "$(git_safe -C "$DL_DIR" rev-parse HEAD)" != "$MARCAP_COMMIT" ]]; then
+  echo "checkout is not at the pinned commit $MARCAP_COMMIT" >&2
   exit 1
 fi
-echo "commit OK: $COMMIT"
+echo "commit OK: $MARCAP_COMMIT"
 
 # Paths are passed as arguments; nothing is run from inside the download directory.
 shopt -s nullglob

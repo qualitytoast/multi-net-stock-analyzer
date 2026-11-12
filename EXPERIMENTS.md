@@ -341,8 +341,8 @@ for byte, and the rebuilt CSI300 panels equal the saved ones in every field (no 
 
   | Run | Model dates before the test period | Members per day | Member-days | Priced share | Stocks; data ends early |
   |---|---|---|---|---|---|
-  | kr200 | from 2012-01-02 | 193 to 200, median 199 | 597,695 | 99.69% | 378; 31 |
-  | kr200, walk-forward | from 2008-01-02 | 193 to 200 | 796,968 | 99.67% | 429; 51 |
+  | kr200 | from 2012-01-02 | 196 to 200, median 200 | 597,695 | 99.69% | 378; 31 |
+  | kr200, walk-forward | from 2008-01-02 | 196 to 200 | 796,968 | 99.67% | 429; 51 |
 
 - **Trading settings:** sell-side tax steps of 30, 25, 23, 20, 18, 15 and 20 bps (from 2007, 2019-05-30, 2021, 2023,
   2024, 2025, 2026); price limits 15%, then 30% from 2015-06-15; fees 3 bps and slippage 5 bps as for China.

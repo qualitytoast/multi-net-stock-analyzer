@@ -2,6 +2,7 @@
 # Fetch and verify the pinned inputs of the free US coverage check (docs/RULES.md, Rule UC):
 #   1. fja05680/sp500 (unofficial S&P 500 members by date) at one pinned git commit;
 #   2. Tiingo's public list of supported tickers (no API key), pinned by sha256.
+# The pins are in scripts/us_coverage_data.pins, which the check reads too; change them there only.
 # Nothing is stored in the repo. Safe to re-run: it skips work that is already done and re-verifies the hashes.
 #
 # Usage:
@@ -9,31 +10,35 @@
 #   scripts/get_us_coverage_data.sh --new-pin  download today's Tiingo file into a new dated directory and print
 #                                              the values to record. It changes no pin: see "If the Tiingo hash
 #                                              differs" below before using it.
+#   scripts/get_us_coverage_data.sh --print-pins print the pins, one KEY=value per line, and exit; fetches nothing
 #
 # If the Tiingo hash differs
 #   Tiingo replaces this file every day, so a fresh download almost never has the pinned hash. This script
 #   therefore never replaces an existing local copy and never accepts a download with another hash. When the
 #   check fails:
 #   - a local copy exists but its hash differs: the file was changed or swapped. Do not run the coverage check
-#     on it. Restore the pinned file (TIINGO_ZIP_SHA256 below) from a backup into TIINGO_DIR.
+#     on it. Restore the pinned file (TIINGO_ZIP_SHA256 in scripts/us_coverage_data.pins) from a backup into
+#     TIINGO_DIR.
 #   - no local copy exists and the download has another hash: the pinned file is gone from Tiingo's server.
 #     Restore it from a backup, or make a new pin.
 #   - a new pin is a new input, so the coverage numbers change and the old result is no longer reproducible.
-#     Ask the owner first. Then: run this script with --new-pin, copy the printed date, time and hash into the
-#     TIINGO_* values below and into the PINNED_* values in src/detmaso/data/ingest/us_coverage.py (a test checks
-#     that the two agree), log the change and its reason under "Rule changes" in docs/RULES.md (the Details under
-#     Rule UC name the old hash), and re-run the check.
+#     Ask the owner first. Then: run this script with --new-pin, copy the printed time and hash into
+#     TIINGO_DOWNLOADED_AT and TIINGO_ZIP_SHA256 in scripts/us_coverage_data.pins (the only place they are written;
+#     the check reads the same file), log the change and its reason under "Rule changes" in docs/RULES.md (the
+#     Details under Rule UC name the old hash), and re-run the check.
 set -euo pipefail
 
-SP500_REPO="https://github.com/fja05680/sp500.git"
-SP500_COMMIT="a2430f2af0c79ddf0748e91de11bdeb1616ab5a7"
-SP500_FILE="S&P 500 Historical Components & Changes (Updated).csv"
-SP500_FILE_SHA256="36326709d46d6cd25834de5df457b16f5f96fad3a06b9beac28f7b88aa0b0d54"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# SP500_REPO, SP500_COMMIT, SP500_FILE, SP500_FILE_SHA256, TIINGO_URL, TIINGO_DOWNLOADED_AT, TIINGO_ZIP_SHA256.
+source "$SCRIPT_DIR/us_coverage_data.pins"
+TIINGO_DATE="${TIINGO_DOWNLOADED_AT:0:10}"
 
-TIINGO_URL="https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
-TIINGO_DATE="2026-11-12"
-TIINGO_DOWNLOADED_AT="2026-11-12T22:24:27Z"
-TIINGO_ZIP_SHA256="3d33d870111072d8a87de8a3f73cb3b30f00ec928fa517846ae29b614822f800"
+if [[ "${1:-}" == "--print-pins" ]]; then
+  for name in SP500_REPO SP500_COMMIT SP500_FILE SP500_FILE_SHA256 TIINGO_URL TIINGO_DOWNLOADED_AT TIINGO_ZIP_SHA256; do
+    printf '%s=%s\n' "$name" "${!name}"
+  done
+  exit 0
+fi
 
 SP500_DIR="${SP500_DIR:-$HOME/data/fja05680_sp500/$SP500_COMMIT}"
 TIINGO_ROOT="${TIINGO_ROOT:-$HOME/data/tiingo}"
@@ -82,12 +87,12 @@ if [[ "${1:-}" == "--new-pin" ]]; then
   fi
   mkdir -p "$NEW_DIR"
   download_tiingo "$NEW_DIR/supported_tickers.zip"
-  echo "new Tiingo download (not pinned until recorded in this script and in us_coverage.py):"
+  echo "new Tiingo download (not pinned until recorded in scripts/us_coverage_data.pins):"
   echo "  directory: $NEW_DIR"
   sed 's/^/  /' "$NEW_DIR/supported_tickers.zip.info"
   exit 0
 elif [[ $# -gt 0 ]]; then
-  echo "unknown argument: $1 (the only option is --new-pin)" >&2
+  echo "unknown argument: $1 (the options are --new-pin and --print-pins)" >&2
   exit 2
 fi
 

@@ -8,7 +8,9 @@ in the locked test period (from 2024-03-01).
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -343,11 +345,19 @@ def test_kg1_pass_and_fail():
 
 
 # Pins and configs --------------------------------------------------------------------------------------------
-def test_pins_agree_across_script_module_and_config():
-    script = (ROOT / "scripts/get_kr_data.sh").read_text()
-    assert re.search(r'^COMMIT="([0-9a-f]{40})"', script, re.MULTILINE).group(1) == kr.PINNED_COMMIT
-    assert re.search(r'^QLIB_COMMIT="([0-9a-f]{40})"', script, re.MULTILINE).group(1) == kr.DUMP_BIN_COMMIT
-    assert re.search(r'^DUMP_BIN_SHA256="([0-9a-f]{64})"', script, re.MULTILINE).group(1) == kr.DUMP_BIN_SHA256
+def test_the_download_script_and_the_converter_use_the_same_pins(tmp_path):
+    """``--print-pins`` is the script's no-network mode: it prints the pins it sourced, which must be the ones this
+    module read from scripts/kr_data.pins. Nothing is fetched or written."""
+    env = {**os.environ, "DL_DIR": str(tmp_path / "dl"), "TOOLS_DIR": str(tmp_path / "tools")}
+    done = subprocess.run([str(ROOT / "scripts/get_kr_data.sh"), "--print-pins"], capture_output=True, text=True, env=env)
+    assert done.returncode == 0, done.stderr
+    assert dict(line.split("=", 1) for line in done.stdout.splitlines()) == kr.PINS and done.stderr == ""
+    assert not any(tmp_path.iterdir())
+    assert re.fullmatch(r"[0-9a-f]{40}", kr.PINNED_COMMIT) and re.fullmatch(r"[0-9a-f]{40}", kr.DUMP_BIN_COMMIT)
+    assert re.fullmatch(r"[0-9a-f]{64}", kr.DUMP_BIN_SHA256)
+
+
+def test_kr200_config_names_the_pinned_data():
     manifest = ROOT / "scripts/kr_data.sha256"
     assert sorted(kr.read_manifest(manifest)) == [f"data/marcap-{year}.parquet" for year in range(1995, 2027)]
     cfg = load_config(ROOT / "configs/kr200.yaml")

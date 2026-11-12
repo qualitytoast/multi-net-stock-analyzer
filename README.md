@@ -277,7 +277,8 @@ configs/               csi300.yaml (the paper config) and variants that inherit 
                        csi500.yaml, csi1000.yaml, ashare.yaml, kr200.yaml (the paper method on other universes)
 docs/                  PLAN.md (the MVP design), RULES.md (decision rules fixed before each change's first run),
                        DATA_SOURCES.md (free data sources: what is used, what was measured, what to avoid)
-scripts/               pinned downloads (China, Korea, US coverage inputs) and the membership audit
+scripts/               pinned downloads (China, Korea, US coverage inputs), their pins (*.pins) and hashes, and
+                       the membership audit
 src/detmaso/
   config.py            typed config; every assumption is a named value; post-paper flags, `base:` inheritance
                        (one file or a list), placebo, walkforward and trading (evaluation-only) sections

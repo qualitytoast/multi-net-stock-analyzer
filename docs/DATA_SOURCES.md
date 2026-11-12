@@ -150,9 +150,9 @@ Reports: [go/no-go](../results/kr200/go_no_go.md), [conversion](../results/kr200
 
 - **Source:** FinanceData/marcap (https://github.com/FinanceData/marcap) at commit
   `d3b703628e5a73112111d8bc43439f950762f67e`: 32 yearly parquet files, 15.7 million rows, every trading day from
-  1995-05-02. `scripts/get_kr_data.sh` fetches it and checks every file against `scripts/kr_data.sha256`. The
-  repo states no license; it says the data comes from the Korea Exchange's public data portal. No data is
-  committed here.
+  1995-05-02. `scripts/get_kr_data.sh` fetches it and checks every file against `scripts/kr_data.sha256`; the
+  commit and the other pins are written once, in `scripts/kr_data.pins`. The repo states no license; it says the
+  data comes from the Korea Exchange's public data portal. No data is committed here.
 - **Go/no-go, all three passed** (rows before 2024-03-01):
   - delisted stocks are present: 1,151 KOSPI codes end more than a year before 2024-03-01 (bar: 200), and all 3
     named delistings are there;
@@ -163,7 +163,7 @@ Reports: [go/no-go](../results/kr200/go_no_go.md), [conversion](../results/kr200
   market cap of the past 6 months. 648 stocks were picked at some time before 2024-03-01; 183 of them have data
   that ends early, and 76 stopped trading for good while a member. Without the name patterns, 16 listed funds
   (infrastructure funds, REITs) would have been picked on some date.
-- **QA** (dates before 2024-03-01): 193 to 200 members per day; 99.69% of member-days priced from 2012 (99.67%
+- **QA** (dates before 2024-03-01): 196 to 200 members per day; 99.69% of member-days priced from 2012 (99.67%
   from 2008); no one-day move above 31% in any year.
 - **Trading settings** (`configs/kr200.yaml`, each with its source): sell-side transaction tax including the rural
   development tax, 30 bps until 2019-05-29, then 25, 23 (2021), 20 (2023), 18 (2024), 15 (2025), 20 (2026); daily
@@ -214,8 +214,8 @@ member-days.
   has no WRDS access (2026-11-12), so CRSP is out. Remaining routes: a rename map (old ticker to new) followed by
   a new check under a new rule written beforehand, or a paid source (section 5).
 - Pins: fja05680/sp500 commit `a2430f2af0c79ddf0748e91de11bdeb1616ab5a7`; Tiingo's list downloaded
-  2026-11-12T22:24:27Z, sha256 `3d33d870111072d8a87de8a3f73cb3b30f00ec928fa517846ae29b614822f800`
-  (`scripts/get_us_coverage_data.sh` fetches and verifies both).
+  2026-11-12T22:24:27Z, sha256 `3d33d870111072d8a87de8a3f73cb3b30f00ec928fa517846ae29b614822f800`. They are
+  written once, in `scripts/us_coverage_data.pins`; `scripts/get_us_coverage_data.sh` fetches and verifies both.
 
 ## 3. Different kinds of test beds (documented only, not built)
 

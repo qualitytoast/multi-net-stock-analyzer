@@ -25,6 +25,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
+from detmaso.data.ingest.pins import SCRIPTS_DIR, read_pins
 from detmaso.mdtable import md_table
 
 # The rule -----------------------------------------------------------------------------------------------------
@@ -40,13 +41,14 @@ US_EXCHANGES = frozenset({
     "OTCQB", "OTCQX", "OTCCE", "OTCD", "EXPM", "NMFQS", "",
 })  # fmt: skip
 
-# The pinned inputs (the same values as in scripts/get_us_coverage_data.sh; a test checks that they agree) ------
-PINNED_SP500_COMMIT = "a2430f2af0c79ddf0748e91de11bdeb1616ab5a7"
-PINNED_MEMBERSHIP_FILE = "S&P 500 Historical Components & Changes (Updated).csv"
-PINNED_MEMBERSHIP_SHA256 = "36326709d46d6cd25834de5df457b16f5f96fad3a06b9beac28f7b88aa0b0d54"
-PINNED_TIINGO_DOWNLOADED_AT = "2026-11-12T22:24:27Z"
-PINNED_TIINGO_ZIP_SHA256 = "3d33d870111072d8a87de8a3f73cb3b30f00ec928fa517846ae29b614822f800"
-TIINGO_URL = "https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
+# The pinned inputs (scripts/us_coverage_data.pins, the file scripts/get_us_coverage_data.sh sources) -----------
+PINS = read_pins(SCRIPTS_DIR / "us_coverage_data.pins")
+PINNED_SP500_COMMIT = PINS["SP500_COMMIT"]
+PINNED_MEMBERSHIP_FILE = PINS["SP500_FILE"]
+PINNED_MEMBERSHIP_SHA256 = PINS["SP500_FILE_SHA256"]
+PINNED_TIINGO_DOWNLOADED_AT = PINS["TIINGO_DOWNLOADED_AT"]
+PINNED_TIINGO_ZIP_SHA256 = PINS["TIINGO_ZIP_SHA256"]
+TIINGO_URL = PINS["TIINGO_URL"]
 TIINGO_CSV_NAME = "supported_tickers.csv"
 TIINGO_COLUMNS = ("ticker", "exchange", "assetType", "priceCurrency", "startDate", "endDate")
 
