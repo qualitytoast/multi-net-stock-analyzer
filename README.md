@@ -136,7 +136,7 @@ Variants of the paper config live in `configs/` and inherit it with `base: csi30
 what differs (for example `configs/csi300_nodiv.yaml` sets `loss.c_div: 0.0`; `configs/csi300_single_mlp.yaml`
 switches to a single network). A run group (`--tag`) belongs to one config: training refuses to add to a
 group trained with a different config, and evaluation refuses a mismatched config. Variants are compared on
-the validation period only:
+the validation period (or on walk-forward folds, see "Walk-forward evaluation" below), never on the test period:
 
 ```bash
 uv run detmaso train    --config configs/csi300_single_mlp.yaml --tag single_mlp
@@ -231,7 +231,7 @@ unless `--extra-test-run "reason"` records it. Development uses the training and
 | `runs/csi300_wf/prepared/` | walk-forward data (from 2008), `data_report.md` with a per-year history check, and `folds/fold<Y>/` each fold's moods |
 | `runs/csi300_wf/<tag>/fold<Y>/seed<k>/` | a walk-forward job: the same files as a validation-period seed folder |
 | `runs/csi300_wf/<tag>/` | `series_wf.parquet` (per seed and test day: fold, IC, paper backtest, benchmark, long-short, buys and sells with and without blocked trades), `results_wf.json`, `report_wf.md`, `figures_wf/`, `folds.json` |
-| `results/csi300/trials.csv` | the try ledger (git-tracked): every trained configuration, its kind (counted try, placebo or training-only), run groups, seed statuses and validation metrics |
+| `results/csi300/trials.csv` | the try ledger (git-tracked): every trained configuration, its kind (counted try, placebo or training-only), run groups, seed (or walk-forward job) statuses, validation and walk-forward metrics |
 | `docs/RULES.md` | the decision rules, written before each change's first run, and the grids set by pilots |
 
 ## Layout

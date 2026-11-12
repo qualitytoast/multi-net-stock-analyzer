@@ -269,7 +269,8 @@ in the placebo reports) predate the placebo valuation fix logged in "Rule change
   - Now: it also requires that the 95% range of the after-cost Sharpe gain is not entirely below 0 (Rule WK, K5).
   - Reason: TODO.md says every later step is judged on walk-forward IC and after-cost Sharpe; a change that raises
     IC but detectably loses money after trading costs is not an improvement.
-  - Made before any walk-forward run, so no result had been seen. CLAUDE.md's wording is the owner's to update.
+  - Made before any walk-forward run, so no result had been seen. The matching bullet is in CLAUDE.md's keep rule,
+    added at the owner's request.
 - **2026-11-11, walk-forward rules as applied by code: three corrections (approved by the owner during the review of
   the walk-forward change, before any real-answer walk-forward run).**
   - Placebo valuation (Rule WT). Before: a held stock outside that block's shuffle (held on only because it could

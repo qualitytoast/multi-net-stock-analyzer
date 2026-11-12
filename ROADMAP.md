@@ -5,7 +5,7 @@ decisions (D1-D10) refer to [docs/PLAN.md](docs/PLAN.md); changes to planned def
 [DEVIATIONS.md](DEVIATIONS.md); every run is logged in [EXPERIMENTS.md](EXPERIMENTS.md). Open work
 is in [TODO.md](TODO.md).
 
-Last updated: 2026-11-08
+Last updated: 2026-11-11
 
 ## Status
 

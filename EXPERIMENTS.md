@@ -1,7 +1,8 @@
 # Experiments
 
 Every training or evaluation run is logged here: date, config, data used, results, and whether the
-change was kept or dropped. Comparisons use the training and validation periods only; the test period
+change was kept or dropped. Comparisons use the training and validation periods, or the walk-forward folds (history
+from 2008, ending 2024-02-28), only; the test period
 (2024-03-01 to 2026-03-01) is locked and was opened once, for E3 (see `locks/csi300_test.json`).
 
 Every configuration trained with validation switched on is also a counted try in the git-tracked try ledger
