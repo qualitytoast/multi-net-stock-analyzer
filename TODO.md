@@ -47,11 +47,26 @@ Done when: the plot exists, and the best agent count has been chosen on walk-for
 
 ## More data
 
-- [ ] Bigger universes: CSI500 and CSI1000.
+The datasets are built (2026-11-12; see ROADMAP.md and docs/DATA_SOURCES.md): CSI500, CSI1000, the whole A-share
+market (validation-period data only) and a South Korea top 200. No model has been run on them. They are extra
+checks next to CSI300; the keep rule and the second-market rule (the US) are unchanged (docs/RULES.md, Rule ND).
+
+- [ ] First model runs on CSI500, CSI1000 and Korea: the walk-forward placebo on each new market first, then the
+  paper config and the single network (`configs/walkforward/<market>/`), reported next to CSI300.
+- [ ] S&P 500. The free route failed its coverage check (E22: 91.06% against a 95.0% bar). The owner has no WRDS/CRSP
+  access (2026-11-12). Remaining routes: a rename map (old ticker to new) and a new coverage check under a new rule
+  written beforehand, or a paid source (docs/DATA_SOURCES.md).
+- [ ] Second-market check (from the guards): changes kept on China must also help on the US (train on China, test on the US). Needs the S&P 500 data.
+- [ ] Whole A-share market: make `prepare` fit in memory (its walk-forward data needs about 27 GiB; the machine has
+  24) without changing the paper config's results. Then load more warm-up history, so the new-listing filter has
+  settled before the first model date, and add an ST filter (BaoStock has daily ST flags).
+- [ ] Korea: returns miss the move into a re-opening price after a capital reduction, spin-off, merger or long halt
+  (82 cases on member-days since 2007), and cash dividends. Both need corporate-action data from another source.
+- [ ] China membership dates: the archive shows index reviews 9 to 14 trading days late (membership audit, E21).
+  Decide whether to correct the dates.
 - [ ] Qlib's Alpha158 features (158 instead of 34).
 - [ ] Other horizons: 5-day and 60-day labels.
-- [ ] S&P 500. This needs a data source decision first: WRDS/CRSP if available, otherwise free data with its gaps documented.
-- [ ] Second-market check (from the guards): changes kept on China must also help on the US (train on China, test on the US). Needs the S&P 500 data.
+- [ ] Documented only, if wanted later: Taiwan, Numerai, Binance (docs/DATA_SOURCES.md).
 
 ## Smarter models
 

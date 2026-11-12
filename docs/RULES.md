@@ -237,6 +237,226 @@ models). Only a few 2015 numbers moved, in the second decimal; every figure abov
 - Deflated Sharpe uses the daily after-cost excess return (realistic costs with blocking, minus the equal-weighted
   eligible stocks); deflated IC uses the standard error of the average IC from the resampling above.
 
+## More data: new universes and markets (fixed 2026-11-12, before any data check or prepare run)
+
+Plan: `i-want-more-free-mutable-barto.md`. Owner's go-ahead 2026-11-12: record the findings, add all the extra China
+data, build the Korea dataset, run the free US coverage check. Decisions: D1 c, D2 a, D3 a, D4 b (coverage check
+only, no price fetch), D5 a, D6 a, D7 a, D8 a, D9 a, D10 a. This build trains no model, so it adds no tries.
+
+Words used below: a **member-day** is one stock on one trading day on which it is in the universe; a **priced**
+member-day has a close on that day; the **factor** is the adjustment factor (adjusted price = raw price x factor,
+adjusted volume = raw volume / factor).
+
+### Rule ND: every new dataset
+
+- Locked test period: 2024-03-01 to 2026-03-01 in every new config, the same as CSI300. Walk-forward ends
+  2024-02-28. No model has been evaluated on any new dataset's test period, and none is in this build.
+- Every data-check statistic (QA reports, coverage, audits, go/no-go checks) uses only dates before 2024-03-01.
+  The conversion itself is mechanical and runs over all dates.
+- Each dataset's QA report shows, per year: members per day, the share of member-days that are priced, and the
+  number of stocks whose data ends before the last date checked (a survivorship check).
+- Role in decisions (D2 a, D5 a): CSI500, CSI1000, the whole A-share market and Korea are reported next to CSI300
+  as extra checks only. The general keep rule and the second-market rule (the US) stay exactly as written.
+- Downloads are pinned by git commit or sha256 and kept outside the repo; the repo holds scripts and hashes only.
+
+### Rule CU: the China universes (from the pinned archive already on disk)
+
+- CSI500 (`csi500`, index series SH000905): the same splits and the same 11 walk-forward folds as CSI300.
+- CSI1000 (`csi1000`, index series SH000852): membership is usable from 2015-05-29, and the 120-day market state
+  needs a full member list, so its history starts 2016-01-01. Walk-forward test years 2018-2023 (6 folds; the first
+  fold trains on 2016 and early-stops on 2017).
+- The whole A-share market (`all`, index series SH000985, delisted stocks kept), with these filters:
+  - suspensions: the existing universe rule (a stock must have traded the day before);
+  - new listings: a stock enters the universe only from its 121st traded day in the loaded data (120 = the longest
+    feature window). Behind a config flag that is off for every existing config;
+  - ST stocks (under a risk warning): the pinned archive carries no ST flags, so no ST filter is applied in this
+    build. ST stocks stay in the universe and their 5% price limit is not modelled. This gap is reported with the
+    dataset, not hidden.
+  - Price limits for blocked trades: the existing China rules, plus 30% for Beijing Stock Exchange codes (BJ).
+- If preparing the whole A-share market does not fit in this machine's memory with the existing pipeline, the build
+  stops there and reports the numbers; the pipeline is not rewritten in this build.
+
+### Rule KG: South Korea go/no-go (written before the data was opened)
+
+Source: FinanceData/marcap at a pinned commit. All three checks must pass; if any fails, the Korea build stops and
+the owner is told (Taiwan is the fallback, and that is the owner's call).
+
+- KG1, delisted stocks are present. Both must hold, on rows before 2024-03-01:
+  - at least 200 KOSPI stock codes have their last row more than one year before 2024-03-01;
+  - at least 2 of these 3 known delistings are present, with their last traded row in the stated year: Hanjin
+    Shipping (117930, 2017), Korea Exchange Bank (004940, 2013), the old Samsung C&T (000830, 2015).
+- KG2, the split adjustment comes out right. The factor is chained from the exchange's own base price: base price
+  of day t = close - change, and the factor is multiplied by (previous row's close / base price) on every day.
+  Both must hold:
+  - Samsung Electronics (005930), 50-for-1 split: the factor after the split (2018-05-04) is 50 times the factor
+    before it (its last traded day in April 2018), within 1%;
+  - at least 2 of these 3 other splits come out within 1% of their ratio, in the stated month: Amorepacific
+    (090430) 10-for-1 in 2015-05, Naver (035420) 5-for-1 in 2018-10, Kakao (035720) 5-for-1 in 2021-04.
+- KG3, suspended days can be identified. In the converted data, Samsung Electronics has no price on its split halt
+  (2018-04-30, 2018-05-02, 2018-05-03) and has a price on 2018-04-27 and 2018-05-04.
+- Cash dividends are not in this source, so the factor does not include them. Reported with the dataset.
+
+### Rule KU: the Korea stock universe (D6 a: a synthetic top 200)
+
+- Eligible: stocks listed on KOSPI that are common shares. Preferred shares (codes not ending in 0), ETFs, ETNs,
+  SPACs, REITs and other listed funds are excluded. The exact code and name patterns are fixed in the converter
+  from stock codes, names and markets only, never from prices or returns, and are listed under "Details" below
+  before the universe is first computed.
+- Re-picked twice a year. Selection date = the last trading day of May and of November. Ranking = the stock's
+  average daily market cap over the 6 calendar months ending on the selection date; a stock needs a market cap on
+  at least 80% of that window's trading days. The 200 largest are picked (fewer if fewer are eligible).
+- The picks are members from the first trading day of June or December until the day before the next effective
+  date. A member that stops trading for good leaves after its last row and is not replaced until the next re-pick,
+  so some days have fewer than 200 members.
+- Only data up to the selection date is used, so membership on any day depends only on earlier days.
+- The index series for plots is synthetic too: the member stocks' market-cap-weighted daily return, chained.
+- The official KOSPI 200 is not used (free history starts only in 2014-05 and needs a login).
+- Trading settings (D9 a): Korea's sell-side transaction tax steps and its daily price limits (15%, then 30% from
+  2015-06-15) are set in the Korea config, each with its source cited in the config.
+
+Details (appended by the Korea build before the universe is first computed):
+
+- **2026-11-12 16:42, exclusion patterns.** Fixed from stock codes, names and market labels only; no price, return
+  or market-cap value was looked at to choose them, and the universe had not been computed. Source: FinanceData/marcap
+  at commit `d3b703628e5a73112111d8bc43439f950762f67e`. The code that applies them is
+  `src/detmaso/data/ingest/kr.py`.
+  - Stock code: the source's `Code`, left-padded with zeros to 6 characters. Rows up to 2000-05-26 store codes
+    without their leading zeros; the padded codes line up with the later 6-character codes (across the switch,
+    1452 of 1460 codes continue with the same market label; the 8 that do not are 7 preferred shares and one stock
+    that left the list).
+  - KOSPI: the row's `Market` label is exactly `KOSPI` (the same rows as `MarketId` = `STK`). Rows labelled
+    `KOSDAQ`, `KOSDAQ GLOBAL` or `KONEX` are not KOSPI.
+  - Common share: the padded code's last character is `0`. Every other code is excluded (preferred shares end in
+    5, 7, 9, K, L or another letter; before 2000-05-29 some end in other digits).
+  - Name patterns (regular expressions), tested on the stock's name on the selection date with all spaces removed
+    and letters in upper case. A stock whose name matches any of them is excluded:
+    - SPACs: `스팩|SPAC|기업인수목적`
+    - REITs and listed real-estate funds:
+      `(?<!메)리츠|REIT|부동산투자|코크렙|리얼티|^교보메리츠$|^유레스메리츠|^맥쿼리센트럴|^케이알제\d+호$|^트러스제\d+호$`
+      ("리츠" counts only when it does not follow "메", so the Meritz companies, 메리츠화재, 메리츠증권, 메리츠종금 and
+      메리츠금융지주, stay eligible.)
+    - ETFs and ETNs: `ETF|ETN|^(KODEX|TIGER|KOSEF|KINDEX|ARIRANG|KBSTAR|HANARO)` (a safety net: the source lists
+      stocks only, and no name in it matches).
+    - Ship funds: `^(동북아|아시아|코리아|바다로|거북선|하이골드)\d+호$|^아시아퍼시픽\d+$`
+    - Infrastructure funds: `인프라$` (맥쿼리인프라, KB발해인프라; a name such as 두산인프라코어 does not end in it).
+    - Resource, overseas and auction funds: `유전|니켈\d+호$|베트남|경매|^한국패러랠$|^한국아태특별$`
+    - Mutual funds and restructuring funds listed in 1999-2000:
+      `펀드|기금|^박현주|^플래티넘|^플러스\d+호$|^장인환\d+호$|^알바트로스$|^코스파이더$|^SEI에셋$|^트윈스비전일$|^엠피챌린지$|^마이다스성일$|^옵티멈전환일$`
+      (알바트로스, 코스파이더, 엠피챌린지 and SEI에셋 are judged to be funds from their names and from their codes,
+      which sit in the same 1999 run of codes as the other funds; they stopped being listed by 2001.)
+    - Check on the pinned data, names only: among KOSPI codes ending in 0, the patterns match 145 of 2372 distinct
+      names, and no code has both a matching and a non-matching name.
+  - A stock that moves between KOSDAQ and KOSPI keeps its code. It is eligible on a selection date only if its row
+    on that date is labelled KOSPI; its average market cap uses all of its rows in the window, whichever board
+    they are on. Once picked it stays a member until the next effective date whatever its board label, and its
+    whole price history on every board is converted.
+- **2026-11-12 16:42, how the rule's wording is read by the code (fixed at the same time, before the universe was
+  computed).** These used the source's layout and counts of unusable rows only, never prices or returns.
+  - A source row counts only if its close is a positive number (rows with a zero or missing close are ignored
+    everywhere; among codes ending in 0 there are 6 such rows, all funds). "Listed on a date" = has a row that day.
+  - Trading days = the dates present in the source. A selection date is the last trading day of a May or November
+    that is followed in the source by a trading day of the next month (the effective date), and whose whole window
+    lies inside the source (first selection date 1995-11-30).
+  - The 6 calendar months ending on the selection date = December to May, or June to November: from the first day
+    of the month five months before the selection month up to the selection date.
+  - A stock has a market cap on a day if it has a row that day with a positive `Marcap`. The average is over the
+    days it has one. The 80% test is exact: 5 x (days with a market cap) >= 4 x (trading days in the window).
+  - A stock must be listed on the selection date. Ties in average market cap are broken by the lower code.
+  - A member's spans end on its last row in the source. A pick with no row on or after the effective date never
+    becomes a member.
+  - Index series: starts at 1000 on the first selection date. Each day's return is the sum over that day's members
+    of weight x return, where the weight is the stock's market cap on its latest earlier row (weights sum to 1
+    over members that have one) and the return is its adjusted close over its previous traded adjusted close,
+    minus 1 (0 on a day it does not trade).
+  - Factor (Rule KG2): "row" means a source row with a positive close, traded or not. On a row whose base price
+    (close - change) is not a positive number the source gives no base price, so the factor is carried over
+    unchanged on that row. Among codes ending in 0 there are 884 such rows: 876 from 1998-01-06 to 2000-01-25
+    (63 stocks, mostly failed banks under a trading halt; 867 of the rows have zero volume, and on the 9 traded
+    ones a share change that day would be missed) and 8 in 2009 (ship funds, which are excluded). None is on or
+    after 2007-01-01 in a stock that can be picked, so no configured load window (from 2007) contains one; the
+    converter reports the count and a test fails if one ever appears from 2007 on.
+  - A traded row whose open, high or low is zero in the source (all rows of 1995-06-10 and a few rows a year
+    after) keeps its close and volume; the zero fields are written as missing.
+
+### Rule UC: the free US coverage check (D4; a go/no-go for the free S&P 500 route)
+
+- Membership: fja05680/sp500 at a pinned commit (unofficial; S&P 500 members by date).
+- Price coverage: Tiingo's public list of supported tickers (no API key), downloaded once; its sha256 and download
+  time are recorded, and the file stays outside the repo.
+- Window: 2008-01-01 to 2024-02-29 (the walk-forward history up to the locked test period). Days = weekdays.
+- A member-day is **matched** if Tiingo lists that ticker as a stock with a start date on or before the day and an
+  end date on or after it. Tickers are compared in upper case with "." and "/" written as "-" (class shares). The
+  date range must cover the day because tickers get reused. A listing without dates never matches.
+- Pass bar: at least 95.0% of all member-days in the window are matched.
+- Reported whatever the outcome: the per-year matched share, the matched share among tickers that left the index
+  before 2024-03-01, and the unmatched tickers with their member-day counts.
+- What a pass means: Tiingo lists the ticker for those dates. Whether the free tier serves those prices is still
+  unverified until a fetch. A pass makes the Tiingo fetch a TODO item; it is not started in this build.
+- If it fails: the free S&P 500 route is recorded as not good enough as it stands, and the owner is told.
+
+Details (appended by the US check before the match is first computed):
+
+- **2026-11-12 16:27 local time (22:27 UTC). Fixed from the two files' formats only (column names, a few rows, the
+  lists of values in Tiingo's columns, the fja05680 README); no match had been computed.**
+  - Pins (fetched and verified by `scripts/get_us_coverage_data.sh`):
+    - fja05680/sp500 at commit `a2430f2af0c79ddf0748e91de11bdeb1616ab5a7` (its newest commit, dated 2026-09-07).
+      File used: `S&P 500 Historical Components & Changes (Updated).csv`, sha256
+      `36326709d46d6cd25834de5df457b16f5f96fad3a06b9beac28f7b88aa0b0d54`.
+    - Tiingo: `supported_tickers.zip` (holds one file, `supported_tickers.csv`, with the columns ticker, exchange,
+      assetType, priceCurrency, startDate, endDate), downloaded 2026-11-12T22:24:27Z from
+      `https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip`, 810,580 bytes, sha256
+      `3d33d870111072d8a87de8a3f73cb3b30f00ec928fa517846ae29b614822f800`.
+  - Membership. Each row of the fja05680 file is a date and the full member list from that date on (columns `date`
+    and `tickers`, the list comma-separated; rows sorted by date, one per change date, 1996-01-02 to 2026-08-18).
+    The members on a day are the list of the last row dated on or before that day (the repo's own
+    `sp500_by_date.ipynb` reads the file the same way). Rows dated after 2024-02-29 are not read.
+  - Days. Every Monday to Friday from 2008-01-01 to 2024-02-29, both ends included: 4,218 days. US market holidays
+    that fall on a weekday are included (the rule says weekdays; no trading calendar is used). One member-day = one
+    ticker in that day's list. A ticker that appears twice in one list after normalization counts once.
+  - Ticker normalization, applied the same way to both files: surrounding spaces removed, upper case, "." and "/"
+    replaced by "-". Nothing else is changed (no suffix is dropped, no other character is replaced).
+  - "Tiingo lists that ticker as a stock" = a row of the Tiingo file with all three of:
+    - assetType exactly `Stock` (the file's other values, `ETF` and `Mutual Fund`, do not count);
+    - priceCurrency exactly `USD` (the file's other values, CNY, HKD and AUD, do not count);
+    - exchange not one of the exchanges outside the US: `LSE`, `SHE`, `SHEB`, `SHG`, `SHGB` (London, Shenzhen,
+      Shanghai; some of their rows are labelled USD, and the same letters there are another company). Every other
+      exchange value in the pinned file counts: `NYSE`, `NASDAQ`, `AMEX`, `NYSE MKT`, `NYSE ARCA`, `NYSE NAT`,
+      `BATS`, `PINK`, `OTCMKTS`, `OTCGREY`, `OTCBB`, `OTCQB`, `OTCQX`, `OTCCE`, `OTCD`, `EXPM`, `NMFQS` and a blank
+      exchange. Over-the-counter venues count because a row carries one exchange only, not a history, so it cannot
+      say where the ticker traded on a past day, and the membership file names bankrupt members by their later
+      over-the-counter tickers (for example `AAMRQ`). An exchange value in neither list stops the check with an
+      error (this can only happen if the pin is changed).
+  - Several Tiingo rows for one ticker (2,306 tickers have more than one row, up to 6). Rows are neither merged nor
+    de-duplicated. A member-day is matched if at least one stock row with the same normalized ticker has
+    startDate <= day <= endDate, both ends included. Days that fall between two rows of one ticker stay unmatched.
+    Rows whose tickers differ only by ".", "/" or "-" are rows of the same ticker.
+  - A row with an empty startDate or an empty endDate never matches (in the pinned file every row has both). A
+    date that is not written YYYY-MM-DD stops the check with an error.
+  - The bar is applied to the exact counts, not to a rounded percentage: pass if matched x 1000 >= all x 950.
+  - "Tickers that left the index before 2024-03-01" = tickers with at least one member-day in the window that are
+    not in the member list of 2024-02-29. Their matched share = their matched member-days / their member-days.
+  - Per-year shares go by the calendar year of the day; 2024 is January and February only.
+  - Reported as an extra, not part of the rule: the share of member-days whose ticker has at least one stock row
+    whatever its dates (ticker only).
+
+### Rule MA: membership timing audit (D7 a; a report, not a decision)
+
+- Compares the pinned archive's CSI300 and CSI500 membership with BaoStock's, from 2007-01 to 2024-02.
+- Reports the mismatch share (stocks in exactly one of the two lists / stocks in either list) and how late the
+  archive shows index changes. It changes no data and no decision depends on it.
+
+### Outcome (2026-11-12, EXPERIMENTS E20-E23)
+
+- Rule CU: CSI500 and CSI1000 prepared. The whole A-share market prepared for the validation-period split only;
+  its walk-forward data was stopped at 24.5 GiB of memory on a 24 GB machine, so it is not prepared.
+- Rule KG: **go**, all three checks passed. The Korea dataset is built (Rule KU: 57 selection dates before
+  2024-03-01, 200 picks each).
+- Rule UC: **failed**, 91.06% of member-days matched against the 95.0% bar (94.71% under the loosest reading). The
+  free S&P 500 route is not good enough as it stands; no Tiingo fetch was started.
+- Rule MA: report written. No clear case of the archive showing an index change early; reviews since 2013-12 appear
+  9 to 14 trading days late.
+- Two points were not covered by the rules as written and are logged under "Rule changes"; the owner approved both on 2026-11-12.
+
 ## Grids set by Rule G
 
 (Appended, timestamped, as each pilot finishes and before any run that looks at validation.)
@@ -284,3 +504,24 @@ models). Only a few 2015 numbers moved, in the second decimal; every figure abov
     only, P2 fails on K1 in both directions, and every committed range is finite. The committed placebo results
     were then re-evaluated with the correction (evaluation only, no retraining): only a few 2015 numbers moved, in
     the second decimal (EXPERIMENTS E19).
+- **2026-11-12, Rule CU (the whole A-share market): index series taken out of the `all` list. Reported to the owner
+  the same day and approved by the owner.**
+  - Before (Rule CU as written): the universe is the archive's `all` list, with the suspension and new-listing filters.
+  - Now: the 6 index series that the archive keeps in that list (SH000300, SH000852, SH000905, SH000906, SH000985,
+    SZ399300) are also left out, with the new flag `data.exclude_codes` in `configs/ashare.yaml`. A test checks that
+    these 6 are exactly the non-stock codes in the list, judged by code prefix only.
+  - Reason: an index is not a stock. Left in, the model would score and "buy" index levels.
+  - Made during the build, when the list was first read, before the whole-market data was prepared and before any
+    model run on it (none exists). No price or return informed it. It removes 17,712 of 10,378,047 member-days.
+- **2026-11-12, Rule KG2 (Korea factor chain): rows without a usable base price. Reported to the owner the same day
+  and approved by the owner.**
+  - Before (Rule KG2 as written): the factor is multiplied by (previous row's close / base price) on every day, and
+    a rule that cannot be applied as written stops the build.
+  - Now: on a row where the source gives change = close (so the base price is 0), the factor is carried over
+    unchanged. The build went on.
+  - Reason: 804 such rows exist among picked stocks, all between 1998-01-09 and 2000-01-25 (mostly failed banks
+    under a trading halt). None is dated 2007 or later, and no config loads data before 2007; a data test fails if
+    one ever appears there.
+  - Written into the Rule KU details before the universe was first computed, from a count of such rows only. The
+    alternative, if the owner prefers it, is to start the Korea dataset after 2000-01-25.
+

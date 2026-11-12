@@ -1,0 +1,69 @@
+# The paper method (configs/csi300.yaml: same model, loss, training recipe and split dates) on South Korea: a
+# synthetic top-200 KOSPI universe, as an extra check next to CSI300 (docs/RULES.md, "More data", Rules ND, KG
+# and KU). Its own market name, so its try ledger (results/kr200/trials.csv) and test lock
+# (locks/kr200_test.json) are separate. The test period 2024-03-01 .. 2026-03-01 is locked, as everywhere.
+#
+# Data: FinanceData/marcap (daily snapshots of every Korean stock) at commit
+# d3b703628e5a73112111d8bc43439f950762f67e, converted by `python -m detmaso.data.ingest.kr convert`
+# (scripts/get_kr_data.sh fetches and verifies the source; results/kr200/go_no_go.md and conversion_report.md).
+# Known gaps: no cash dividends (price returns only), no delisting returns, the move into an opening price that
+# the exchange uses as a new base price (after a capital reduction, spin-off or long halt) is not in returns,
+# and the index series is synthetic.
+base: csi300.yaml
+market: kr200
+run_dir: runs/kr200
+
+data:
+  provider_uri: ~/.qlib/qlib_data/kr_data_d3b7036  # kr_data_<short commit of the source>
+  # Qlib knows no Korea region. The region only sets Qlib's own backtest defaults (lot size, price limit),
+  # which this project never uses; "us" is the neutral one (single shares, no limit).
+  region: us
+  data_tag: "marcap-d3b7036"
+  # For this dataset: the sha256 of scripts/kr_data.sha256, the checked-in manifest that lists the sha256 of
+  # every yearly source file at the pinned commit (the converter refuses a source that does not match it).
+  data_sha256: 12b24b74dd15cddadeb713606c9da6dba18a380f7f9deab225f6fb0f905ec802
+  universe: kr200  # Rule KU: the 200 largest KOSPI common shares, re-picked each June and December
+  index_symbol: KRTOP200SYN  # synthetic: the members' market-cap-weighted return, chained (plots only)
+
+# Trading settings for the walk-forward reports (decision D9 a). Rates in basis points (1 bp = 0.01%).
+trading:
+  # Kept at the CSI300 values. No clearly better-sourced single figure was found (brokerage commissions are
+  # negotiated, and slippage is an assumption in any market), and keeping them keeps Korea's after-cost
+  # numbers comparable with China's.
+  fee_bps: 3.0
+  slippage_bps: 5.0
+  # Sell side only: Korea's securities transaction tax on KOSPI trades plus the 0.15% special tax for rural
+  # development that is collected with it. The tax is due by settlement date (two trading days after the trade),
+  # so each new rate really starts with trades made two trading days before its date; the 2019 step is dated by
+  # trade date, the January steps by the law's date (at most two trading days and 5 bps off).
+  # Sources:
+  # - 0.15% + 0.15% before the 2019 cut, 0.10% + 0.15% from it, in force 2019-06-03:
+  #   EY tax alert 2019-0797 (taxnews.ey.com/news/2019-0797); it applied to trades from 2019-05-30, which
+  #   settle on 2019-06-03 (Korea Securities Depository, reported by sateconomy.co.kr/news/view/179589138008079).
+  #   The rate had not changed since 1996 until then (Korea Economic Research Institute, 2019,
+  #   smallake.kr/wp-content/uploads/2019/02/KERI.pdf), so the first step is simply dated at the start of the
+  #   loaded data; a trade before 2007 is an error rather than a guess.
+  # - cuts of 0.02 points in 2021, 0.03 in 2023, 0.02 in 2024 and 0.03 in 2025, after which most KOSPI trades
+  #   pay the rural development tax only: The Korea Times, 2025-07-21
+  #   (koreatimes.co.kr/amp/economy/policy/20250721/korea-set-to-raise-stock-transaction-tax-to-offset-declining-tax-revenue).
+  # - 0.18% in 2024, 0.15% in 2025 and 0.20% for transfers from 2026-01-01, each including the special tax for
+  #   rural development: PwC Worldwide Tax Summaries, Republic of Korea, Corporate, Other taxes
+  #   (taxsummaries.pwc.com/republic-of-korea/corporate/other-taxes, reviewed 2026-06-04).
+  stamp_duty_bps:
+    - ["2007-01-01", 30.0]  # 0.15% + 0.15% (in force since 1996, unchanged until 2019)
+    - ["2019-05-30", 25.0]  # 0.10% + 0.15%
+    - ["2021-01-01", 23.0]  # 0.08% + 0.15%
+    - ["2023-01-01", 20.0]  # 0.05% + 0.15%
+    - ["2024-01-01", 18.0]  # 0.03% + 0.15%
+    - ["2025-01-01", 15.0]  # 0% + 0.15%
+    - ["2026-01-01", 20.0]  # 0.05% + 0.15%
+  # Daily price limits, all codes: 15% from 1998-12-07, 30% from 2015-06-15 (measured from the exchange's base
+  # price). Sources: Korea Exchange, "Daily Price Limits"
+  # (global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T5.jsp), and its notice "Implementation of
+  # expanded daily price limit" (mondovisione.com/news/korea-exchange-implementation-of-expanded-daily-price-limit-2015522).
+  price_limits:
+    - [[], "1998-12-07", 0.15]
+    - [[], "2015-06-15", 0.30]
+
+qa:
+  membership_checks: true  # Rule ND: per-year members, priced share and survivorship in the data report

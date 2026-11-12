@@ -1,0 +1,14 @@
+# The paper method (configs/csi300.yaml, unchanged) on the CSI500 index: mid-cap China stocks, as an extra
+# check next to CSI300 (docs/RULES.md, "More data", Rules ND and CU). Same pinned archive, same splits.
+# Its own market name, so its try ledger (results/csi500/trials.csv) and test lock (locks/csi500_test.json)
+# are separate from CSI300's. The test period 2024-03-01 .. 2026-03-01 is locked, as everywhere.
+base: csi300.yaml
+market: csi500
+run_dir: runs/csi500
+
+data:
+  universe: csi500
+  index_symbol: SH000905  # the CSI500 price index (plots only)
+
+qa:
+  membership_checks: true  # Rule ND: per-year members, priced share and survivorship in the data report

@@ -290,6 +290,34 @@ def test_no_real_return_enters_a_placebo_evaluation(tmp_path):
     pd.testing.assert_frame_equal(series(), before)
 
 
+def test_blocked_trades_follow_the_price_limits_in_the_config(tmp_path):
+    """The walk-forward evaluation takes the market's daily price limits from the config (trading.price_limits: an
+    evaluation-only setting, so nothing is retrained). 40 stocks fall 15% to the day's low on one day: a lower-limit
+    close under China's 10% limit, where they cannot be sold, and an ordinary close under a 30% limit."""
+    from detmaso.eval.walkforward import evaluate_walkforward
+    from detmaso.eval.wf_stats import SERIES_FILE
+    from detmaso.walkforward.runner import train_walkforward
+
+    cfg = _wf_config(tmp_path / "runs")
+    row, cols = 560, list(range(40))
+    make_market(cfg, stuck=(row, cols))
+    train_walkforward(cfg, "wf.yaml", "limits", [0], years=[2018], jobs=1)
+
+    def blocked_sells(c) -> pd.Series:
+        evaluate_walkforward(c, "wf.yaml", "limits", [0], years=[2018])
+        return pd.read_parquet(c.run_path / "limits" / SERIES_FILE).set_index("decision_date")["blocked_sells"]
+
+    assert cfg.trading.price_limits == TradingConfig().price_limits  # China's limits are the default
+    china = blocked_sells(cfg)
+    wide = dataclasses.replace(cfg, trading=TradingConfig(price_limits=[[[], "1990-01-01", 0.30]]))
+    assert wide.hash() == cfg.hash()  # same run group, same models
+    loose = blocked_sells(wide)
+    assert china.loc[DATES[row]] >= 1 and loose.loc[DATES[row]] == 0
+    none = dataclasses.replace(cfg, trading=TradingConfig(price_limits=[[["SZ"], "1990-01-01", 0.10]]))  # no limit for the SH codes
+    with pytest.raises(ValueError, match="no price limit is defined"):
+        blocked_sells(none)
+
+
 def test_evaluation_series_reproduce_the_paper_backtest_and_purge_ic(trained):
     from detmaso.eval.wf_stats import SERIES_FILE, load_wf_run
 

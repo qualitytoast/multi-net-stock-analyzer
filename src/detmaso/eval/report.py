@@ -7,6 +7,9 @@ by eval.lock.open_test_period (the test-period lock).
 Variants (config ``variant`` other than "paper") get the same report without the paper-comparison
 columns; a single-network model (model.kind single_mlp) has no agent sections (Shapley, diversity,
 scheduler). Each evaluation also saves the per-seed daily series used by eval.compare.
+
+A market the paper reports no numbers for (anything but ``PAPER``'s keys, e.g. csi500) is reported the same
+way as a variant: no paper columns, no bands and no reproduction verdict.
 """
 
 from __future__ import annotations
@@ -228,9 +231,34 @@ def qualitative(results: list[SeedResult], panel: Panel, train_dates) -> dict:
     }
 
 
+def paper_numbers(market: str) -> dict | None:
+    """The paper's headline numbers for a market, or None if the paper does not report that market."""
+    return PAPER.get(market)
+
+
+def headline_rows(means: dict, paper: dict | None) -> tuple[list[str], list[list[str]]]:
+    """Header and rows of the headline table; ``paper`` None = no paper columns (a variant, or a market without
+    paper numbers)."""
+
+    def fmt(metric: str, value: float) -> str:
+        return f"{value:.1%}" if metric in ("ar", "mdd") else f"{value:.3f}"
+
+    rows = []
+    for metric, label in [("ic", "IC"), ("icir", "ICIR"), ("sharpe", "Sharpe"), ("ar", "Annual return"), ("mdd", "Max drawdown")]:
+        m, s = means[metric]
+        row = [label, f"{fmt(metric, m)} +- {fmt(metric, s)}"]
+        if paper is not None:
+            pv = paper.get(metric)
+            row += ["-" if pv is None else fmt(metric, pv), band_status(metric, m, pv)]
+        rows.append(row)
+    return (["Metric", "Ours", "Paper (Table 5/7)", "Band status"] if paper is not None else ["Metric", "Ours"]), rows
+
+
 def verdict(market: str, means: dict, q: dict) -> tuple[str, list[str]]:
     """Plan Section 10, applied in order. Returns (label, list of criteria that failed)."""
-    p = PAPER[market]
+    p = paper_numbers(market)
+    if p is None:
+        raise ValueError(f"the paper reports no numbers for market {market!r}, so there is no reproduction verdict for it")
     failed = []
     if means["ic"] < p["floor_ic"]:
         failed.append(f"IC {means['ic']:.3f} below the paper's single-MLP floor {p['floor_ic']}")
@@ -255,8 +283,9 @@ def verdict(market: str, means: dict, q: dict) -> tuple[str, list[str]]:
 
 
 def _plots(
-    results: list[SeedResult], regime_names: list[str], index_close: pd.Series, fig_dir: Path, split: str, model_label: str = "Det-MASO"
-) -> list[str]:
+    results: list[SeedResult], regime_names: list[str], index_close: pd.Series, fig_dir: Path, split: str, model_label: str = "Det-MASO",
+    index_name: str = "CSI300", index_symbol: str = "SH000300",
+) -> list[str]:  # fmt: skip
     fig_dir.mkdir(parents=True, exist_ok=True)
     files = []
     s0 = results[0].series
@@ -268,29 +297,32 @@ def _plots(
     for r in results:
         ax.plot(ret, (np.cumprod(1 + r.series["port"]) - 1) * 100, lw=1, alpha=0.8, label=f"{model_label} seed {r.seed}")
     ax.plot(ret, (np.cumprod(1 + s0["bench"]) - 1) * 100, color="gray", lw=1.5, ls="--", label="Equal-weight eligible members")
-    ax.plot(ret, (np.cumprod(1 + idx_ret) - 1) * 100, color="black", lw=1.2, label="CSI300 index (buy and hold)")
+    ax.plot(ret, (np.cumprod(1 + idx_ret) - 1) * 100, color="black", lw=1.2, label=f"{index_name} index (buy and hold)")
     ax.set_ylabel("Cumulative return (%)")
     ax.set_title(f"Top-decile long portfolio ({split})")
     ax.legend(fontsize=7, ncol=2)
     files.append(_save(fig, fig_dir / "cumulative_return.png"))
     if multi:
-        files += _agent_plots(results, regime_names, index_close, fig_dir, split)
+        files += _agent_plots(results, regime_names, index_close, fig_dir, split, index_name, index_symbol)
     files.append(_validation_ic_plot(results, fig_dir))
     return files
 
 
-def _agent_plots(results: list[SeedResult], regime_names: list[str], index_close: pd.Series, fig_dir: Path, split: str) -> list[str]:
+def _agent_plots(
+    results: list[SeedResult], regime_names: list[str], index_close: pd.Series, fig_dir: Path, split: str, index_name: str = "CSI300",
+    index_symbol: str = "SH000300",
+) -> list[str]:  # fmt: skip
     """Scheduler weights, window attention, agent diversity and Shapley (multi-agent models only)."""
     files = []
     dec = results[0].series["decision_dates"]
     w = np.mean([r.series["w"] for r in results], axis=0)
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True, gridspec_kw={"height_ratios": [1, 2]})
     ax1.plot(dec, index_close.reindex(dec).to_numpy(), color="black", lw=1)
-    ax1.set_ylabel("CSI300 index (scaled level)")
+    ax1.set_ylabel(f"{index_name} index (scaled level)")
     ax2.stackplot(dec, (w * 100).T, labels=regime_names)
     ax2.set_ylabel("Agent weight (%), seed mean")
     ax2.legend(fontsize=7, loc="upper left", ncol=5)
-    fig.suptitle(f"Scheduler weights by decision date ({split}); index is the real SH000300 series")
+    fig.suptitle(f"Scheduler weights by decision date ({split}); index is the real {index_symbol} series")
     files.append(_save(fig, fig_dir / "scheduler_weights.png"))
 
     a = np.mean([r.series["a"] for r in results], axis=0)
@@ -375,17 +407,14 @@ def evaluate_and_report(cfg: Config, tag: str, seeds: list[int], split: str, loc
         "ar": _mean_std([r.port["ar"] for r in results]),
         "mdd": _mean_std([r.port["mdd"] for r in results]),
     }
-    paper = PAPER[cfg.market]
+    paper = paper_numbers(cfg.market)  # None: the paper does not report this market
     is_paper = cfg.variant == "paper"  # the reproduction itself; variants are not compared with the paper
     multi = results[0].shapley is not None  # several agents (Det-MASO) vs a single network
     q = qualitative(results, panel, splits.train) if multi else None
     model_label = "Det-MASO" if cfg.model.kind == "detmaso" else "Single network"
-    figs = _plots(results, regimes.names, index_close, run / f"figures_{split}", split, model_label)
+    figs = _plots(results, regimes.names, index_close, run / f"figures_{split}", split, model_label, cfg.market.upper(), cfg.data.index_symbol)
     daily = pd.concat([r.daily for r in results], ignore_index=True)
     daily.to_parquet(run / f"series_{split}.parquet", index=False)
-
-    def fmt(metric: str, value: float) -> str:
-        return f"{value:.1%}" if metric in ("ar", "mdd") else f"{value:.3f}"
 
     title = f"# Det-MASO reproduction: {cfg.market}, {split} split" if is_paper else f"# Variant `{cfg.variant}`: {cfg.market}, {split} split"
     lines = [title, ""]
@@ -396,22 +425,15 @@ def evaluate_and_report(cfg: Config, tag: str, seeds: list[int], split: str, loc
     ]
     if not is_paper:
         lines.append(f"- Not the paper configuration: model.kind `{cfg.model.kind}`; development comparison only (see eval.compare)")
+    elif paper is None:
+        lines.append(f"- The paper reports no numbers for `{cfg.market}`: the paper method on another market, with no paper comparison and no verdict")
     if lock_record is not None:
         lines.append(
             f"- Test-period lock: opening {lock_record['openings']} recorded in locks/{cfg.market}_test.json "
             f"({lock_record['reason']}); code {lock_record['code_sha256']}"
         )
     lines += ["", "## Headline metrics (mean +- std over seeds)", ""]
-    rows = []
-    for metric, label in [("ic", "IC"), ("icir", "ICIR"), ("sharpe", "Sharpe"), ("ar", "Annual return"), ("mdd", "Max drawdown")]:
-        m, s = means[metric]
-        pv = paper.get(metric)
-        if is_paper:
-            rows.append([label, f"{fmt(metric, m)} +- {fmt(metric, s)}", "-" if pv is None else fmt(metric, pv), band_status(metric, m, pv)])
-        else:
-            rows.append([label, f"{fmt(metric, m)} +- {fmt(metric, s)}"])
-    header = ["Metric", "Ours", "Paper (Table 5/7)", "Band status"] if is_paper else ["Metric", "Ours"]
-    lines.append(md_table(header, rows))
+    lines.append(md_table(*headline_rows(means, paper if is_paper else None)))
 
     lines += ["", "## Per seed", ""]
     lines.append(md_table(
@@ -442,7 +464,9 @@ def evaluate_and_report(cfg: Config, tag: str, seeds: list[int], split: str, loc
     else:
         lines += ["", f"Dead days over the {split} period (network output constant across stocks; DEVIATIONS 4): "
                   + ", ".join(f"seed {r.seed}: {r.dead_days[0]}" for r in results)]
-    if split == "test" and is_paper:
+    if split == "test" and is_paper and paper is None:
+        lines += ["", f"No reproduction verdict: the paper reports no numbers for `{cfg.market}`."]
+    elif split == "test" and is_paper:
         label, failed = verdict(cfg.market, {k: v[0] for k, v in means.items()}, q)
         lines += ["", f"## Verdict: **{label}**", "", "Rules applied in order (docs/PLAN.md Section 10): floor, reproduced, partially reproduced, inconclusive."]
         if failed:

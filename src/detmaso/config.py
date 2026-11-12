@@ -3,8 +3,9 @@
 Settings added after the paper reproduction are declared with ``post_paper(default)``. Their default
 reproduces the paper method exactly, and while a flag keeps its default it is left out of the config
 hashes, so the paper config keeps the hash recorded in locks/<market>_test.json. A ``label(...)``
-field is descriptive only and never hashed; an ``eval_only(...)`` section (trading costs) only changes how
-trained models are scored, so it is never hashed either (changing it never retrains or creates a new try).
+field is descriptive only and never hashed; an ``eval_only(...)`` section (trading costs and price limits,
+the data QA report's options) only changes how trained models are scored or what a report shows, so it is
+never hashed either (changing it never retrains, never changes the prepared data and never creates a new try).
 
 A YAML config may start from another one with ``base: other.yaml`` (a path relative to the file) and
 override only what differs; nested sections are merged key by key. ``base`` may also be a list, merged in
@@ -39,7 +40,7 @@ def label(default):
 
 
 def eval_only(factory):
-    """Settings that only change how trained models are scored (never part of a config hash)."""
+    """Settings that only change how trained models are scored or what a report shows (never part of a config hash)."""
     return field(default_factory=factory, metadata={"hash": _EVAL})
 
 
@@ -54,6 +55,23 @@ class DataConfig:
     load_start: str
     load_end: str
     qlib_kernels: int = 1  # Qlib's joblib multiprocessing is very slow on macOS; 1 = in-process
+    # New-listing filter (docs/RULES.md, Rule CU): with N > 0 a stock counts as a member on day t only if it has
+    # at least N traded days up to and including t-1 in the loaded data (N = 120: it enters on its 121st traded
+    # day). 0 = off: the membership list is used as loaded.
+    min_traded_days: int = post_paper(0)
+    # Codes in the universe list that are not stocks (e.g. the index series Qlib keeps in its `all` list): they
+    # stay in the raw price cache but are never members, so they never reach the universe or the market state.
+    exclude_codes: tuple[str, ...] = post_paper(())
+
+    def __post_init__(self):
+        if isinstance(self.min_traded_days, bool) or not isinstance(self.min_traded_days, int) or self.min_traded_days < 0:
+            raise ValueError(f"data.min_traded_days must be a whole number >= 0, got {self.min_traded_days!r}")
+        if isinstance(self.exclude_codes, str):
+            raise ValueError("data.exclude_codes must be a list of codes")
+        codes = tuple(str(c).upper() for c in self.exclude_codes)
+        if len(set(codes)) != len(codes):
+            raise ValueError("data.exclude_codes lists a code twice")
+        object.__setattr__(self, "exclude_codes", tuple(sorted(codes)))  # order never changes the fingerprint
 
 
 @dataclass(frozen=True)
@@ -213,12 +231,23 @@ class TradingConfig:
     Rates are in basis points (1 bp = 0.01%) of the traded value, charged on every buy and every sell.
     Realistic setting: buys pay fee_bps + slippage_bps; sells pay the same plus the stamp duty in force on
     the trade date (stamp_duty_bps: (first date, bps) steps; a date before the first step is an error).
+
+    price_limits: the market's daily price limits, used to find trades that are blocked at the close. Steps of
+    (code prefixes, first date, limit as a fraction), applied in order: a later step overrides earlier ones for
+    the codes it matches, from its first date on. An empty prefix list matches every code; a (code, date) that
+    no step covers is an error (eval.trading.price_limit). The default is China's: 10%, 20% on the STAR board
+    (SH688), and 20% on ChiNext (SZ300, SZ301) from 2020-08-24.
     """
 
     flat_bps: tuple[float, ...] = (0.0, 10.0, 20.0)
     fee_bps: float = 3.0  # broker commission + exchange, management and transfer fees, each side
     slippage_bps: float = 5.0  # each side
     stamp_duty_bps: tuple[tuple[str, float], ...] = (("2008-09-19", 10.0), ("2023-08-28", 5.0))  # sells only
+    price_limits: tuple[tuple[tuple[str, ...], str, float], ...] = (
+        ((), "1990-01-01", 0.10),
+        (("SH688",), "1990-01-01", 0.20),
+        (("SZ300", "SZ301"), "2020-08-24", 0.20),
+    )
 
     def __post_init__(self):
         object.__setattr__(self, "flat_bps", tuple(float(x) for x in self.flat_bps))
@@ -230,6 +259,52 @@ class TradingConfig:
             raise ValueError("trading.stamp_duty_bps needs at least one (date, bps) step, in date order")
         if min(self.flat_bps, default=0.0) < 0 or self.fee_bps < 0 or self.slippage_bps < 0:
             raise ValueError("trading costs must be >= 0")
+        object.__setattr__(self, "price_limits", _price_limit_steps(self.price_limits))
+
+    @property
+    def max_price_limit(self) -> float:
+        """The largest daily limit of any step (a one-day move above it is beyond every price limit)."""
+        return max(limit for _, _, limit in self.price_limits)
+
+
+def _price_limit_steps(raw) -> tuple[tuple[tuple[str, ...], str, float], ...]:
+    """trading.price_limits, checked and in its canonical form: ((upper-case prefixes), "YYYY-MM-DD", limit)."""
+    steps = []
+    for step in raw:
+        if isinstance(step, str) or len(step) != 3:
+            raise ValueError(f"trading.price_limits steps are [code prefixes, first date, limit], got {step!r}")
+        prefixes, first, limit = step
+        if isinstance(prefixes, str):
+            raise ValueError(f"trading.price_limits: code prefixes must be a list (an empty list matches every code), got {prefixes!r}")
+        prefixes = tuple(str(p).upper() for p in prefixes)
+        if any(not p for p in prefixes):
+            raise ValueError("trading.price_limits: a code prefix is empty; use an empty list to match every code")
+        limit = float(limit)
+        if not 0.0 < limit < 1.0:
+            raise ValueError(f"trading.price_limits: a limit is a fraction between 0 and 1 (0.10 = 10%), got {limit}")
+        steps.append((prefixes, str(pd.Timestamp(str(first)).date()), limit))
+    if not steps:
+        raise ValueError("trading.price_limits needs at least one (code prefixes, first date, limit) step")
+    return tuple(steps)
+
+
+@dataclass(frozen=True)
+class QAConfig:
+    """What the data QA report shows (`detmaso prepare`); never hashed, because it changes no prepared data.
+
+    membership_checks (docs/RULES.md, Rule ND): adds the per-year membership table (members per day, priced share
+    of member-days, stocks whose data ends early) and the longest unpriced member spans, and leaves out the
+    spot-price check, whose dates lie in the locked test period. Off = the report as it was for CSI300.
+    """
+
+    membership_checks: bool = False
+    worst_spans: int = 10  # how many of the longest unpriced member spans are listed
+
+    def __post_init__(self):
+        if not isinstance(self.membership_checks, bool):
+            raise ValueError(f"qa.membership_checks must be true or false, got {self.membership_checks!r}")
+        if isinstance(self.worst_spans, bool) or not isinstance(self.worst_spans, int) or self.worst_spans < 1:
+            raise ValueError(f"qa.worst_spans must be a whole number >= 1, got {self.worst_spans!r}")
 
 
 @dataclass(frozen=True)
@@ -249,6 +324,7 @@ class Config:
     # Walk-forward evaluation (docs/RULES.md, Rule WL); None = the single train / validation / test split.
     walkforward: WalkForwardConfig | None = post_paper(None)
     trading: TradingConfig = eval_only(TradingConfig)
+    qa: QAConfig = eval_only(QAConfig)
     variant: str = label("paper")  # name shown in reports and comparisons
 
     def __post_init__(self):
@@ -403,5 +479,6 @@ def load_config(path: str | Path) -> Config:
         placebo=_build(PlaceboConfig, raw.get("placebo")),
         walkforward=None if raw.get("walkforward") is None else _build(WalkForwardConfig, raw["walkforward"]),
         trading=_build(TradingConfig, raw.get("trading")),
+        qa=_build(QAConfig, raw.get("qa")),
         variant=raw.get("variant", "paper"),
     )

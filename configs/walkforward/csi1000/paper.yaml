@@ -1,0 +1,16 @@
+# The paper method on CSI1000 (configs/csi1000.yaml), evaluated walk-forward (docs/RULES.md, Rules WL and CU).
+#
+# 6 folds: test years 2018-2023 (the last fold runs to 2024-02-28); fold Y trains on 2016 .. Y-2, early-stops
+# on Y-1 and is tested on Y, with 20-day purges. The first fold trains on 2016 and early-stops on 2017.
+# History and loaded data are those of configs/csi1000.yaml (from 2016-01-01, loaded from 2015-01-01), so
+# CSI300's walk-forward layer (../_layer.yaml: history from 2008) is not used here.
+base: ../../csi1000.yaml
+run_dir: runs/csi1000_wf
+variant: wf_paper
+
+walkforward:
+  first_test_year: 2018
+  last_test_year: 2023
+  end: "2024-02-28"
+  early_stop_years: 1
+  moods: per_fold

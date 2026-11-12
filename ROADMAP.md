@@ -5,7 +5,7 @@ decisions (D1-D10) refer to [docs/PLAN.md](docs/PLAN.md); changes to planned def
 [DEVIATIONS.md](DEVIATIONS.md); every run is logged in [EXPERIMENTS.md](EXPERIMENTS.md). Open work
 is in [TODO.md](TODO.md).
 
-Last updated: 2026-11-11
+Last updated: 2026-11-12
 
 ## Status
 
@@ -18,7 +18,8 @@ Last updated: 2026-11-11
 | Guards against fooling ourselves | Tooling built 2026-11-07 (try ledger, rules as code, placebo, deflated Sharpe and IC); standing rules in CLAUDE.md. 16 tries counted so far ([trials.csv](results/csi300/trials.csv)). |
 | Scheduler collapse fix | Done 2026-11-07: **dropped**. The load-balancing penalty fixes the collapse in the usage sense from strength 0.1 up, but the agents do not reliably become mood specialists (mostly the Tail-Risk mood fails), so the rule written in advance said "no specialists"; the owner kept the rule. Validation IC does not change detectably. See [write-up](results/csi300/scheduler_balance/README.md). |
 | Walk-forward evaluation | Tooling built 2026-11-08: 11 yearly folds (test years 2013-2023, history from 2008, moods refit per fold), trading costs, turnover, blocked trades, long-short spread, the keep rule as code. Placebo passed (E19). No real-answer walk-forward run yet. Rules: [docs/RULES.md](docs/RULES.md), Rules WL, WT, WK, WP. |
-| S&P 500 (M10) | Deferred. Waiting on the owner's WRDS access check. |
+| More data | Built 2026-11-12: CSI500, CSI1000, the whole A-share market (validation-period data only) and a South Korea top-200 dataset, each with its own config, locked test period, try ledger and QA report. No model has been run on any of them. See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). |
+| S&P 500 (M10) | Deferred. The free route (fja05680 member list + Tiingo prices) **failed** its coverage check on 2026-11-12: 91.06% of member-days against a 95.0% bar (E22). The owner has no WRDS access (2026-11-12). Open: a rename map and a new check, or a paid source. |
 | Repo | Public on GitHub, "all rights reserved, viewing only". |
 
 ## Done
@@ -71,6 +72,27 @@ Last updated: 2026-11-11
     after-cost Sharpe of the two placebo models differs detectably because Det-MASO turns over 37% of its portfolio a
     day against 26% for the single network. Re-evaluated 2026-11-11 after the placebo valuation fix (docs/RULES.md,
     "Rule changes"; evaluation only): only a few 2015 numbers moved, in the second decimal.
+
+- [x] **More data** (2026-11-12; EXPERIMENTS E20-E23; [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md); rules in
+  [docs/RULES.md](docs/RULES.md), "More data", written before any data was opened)
+  - Recorded: the survey of free data sources, with verdicts, traps and what was measured here.
+  - China, from the pinned archive: `configs/csi500.yaml` (11 walk-forward folds), `configs/csi1000.yaml` (history
+    from 2016, 6 folds) and `configs/ashare.yaml` (every listed stock, new listings in from their 121st traded day),
+    each with walk-forward variants for the paper model and the single network. 96.8%, 97.3% and 96.5% of
+    member-days are priced. The whole-market walk-forward data does not fit in 24 GB of memory and is not prepared.
+  - South Korea: pinned download (`scripts/get_kr_data.sh`), converter (`detmaso.data.ingest.kr`), a synthetic
+    top-200 KOSPI universe re-picked twice a year, `configs/kr200.yaml` with Korea's sell-side tax and price limits.
+    Go/no-go passed 3 of 3 (delisted stocks present, split factors right, suspensions identified); 99.7% of
+    member-days priced. Known gaps: no cash dividends, no delisting returns, re-opening moves missing from returns.
+  - US: the free coverage check **failed** (91.06% against 95.0%; stocks that left the index 70.37%), so no US data
+    was built.
+  - Membership audit against BaoStock: no look-ahead found; the archive shows index reviews 9 to 14 trading days
+    late and changes its list only about twice a year.
+  - Built for this: per-market price limits (`trading.price_limits`), a new-listing filter (`data.min_traded_days`),
+    `data.exclude_codes`, per-year membership checks in the data report (`qa.membership_checks`), and reports for
+    markets without paper numbers; 401 tests.
+  - Paper config unchanged: frozen hashes equal, both committed CSI300 data reports rebuilt byte for byte, rebuilt
+    CSI300 panels equal the saved ones. No model was trained, so the try count stays at 16.
 
 Test-period checks: q1 (agents stay different) pass; q2 (scheduler does not collapse) **fail**,
 entropy 0.03 of 1.61; q3 (Tail-Risk share 3-7%) **fail**, 2.2%; q4 (Shapley claim) pass, 4 of 5 seeds.

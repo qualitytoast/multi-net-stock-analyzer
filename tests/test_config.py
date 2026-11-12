@@ -149,3 +149,61 @@ def test_scheduler_balance_configs_change_only_balance_settings(name):
         assert cfg.loss.balance_target == "regime"  # docs/RULES.md: mood-share targets (decision D2 b)
     if "placebo" in name:
         assert cfg.is_placebo and cfg.placebo.shuffle_seed == 0
+
+
+# More data (docs/RULES.md, Rules ND and CU): membership filters, QA options ---------------------------------------
+def test_membership_filters_enter_the_hashes_only_when_set(tmp_path):
+    from detmaso.config import DataConfig, QAConfig
+
+    base = synthetic_config(tmp_path)
+    assert base.data.min_traded_days == 0 and base.data.exclude_codes == ()
+    explicit = dataclasses.replace(base, data=dataclasses.replace(base.data, min_traded_days=0, exclude_codes=()))
+    assert explicit.hash() == base.hash() and explicit.data_hash() == base.data_hash()
+    listed = synthetic_config(tmp_path, variant="listed", data={"min_traded_days": 120})
+    longer = synthetic_config(tmp_path, variant="listed", data={"min_traded_days": 121})
+    cut = synthetic_config(tmp_path, variant="cut", data={"exclude_codes": ("SZ399300", "sh000300")})
+    assert len({base.data_hash(), listed.data_hash(), longer.data_hash(), cut.data_hash()}) == 4  # each is its own prepared dataset
+    assert len({base.hash(), listed.hash(), longer.hash(), cut.hash()}) == 4
+    # codes are kept upper-case and sorted, so the order in the file never changes the fingerprint
+    assert cut.data.exclude_codes == ("SH000300", "SZ399300")
+    assert synthetic_config(tmp_path, variant="cut", data={"exclude_codes": ("SH000300", "SZ399300")}).data_hash() == cut.data_hash()
+    # the QA report options change no data and no model: never hashed, and allowed under the name "paper"
+    checked = dataclasses.replace(base, qa=QAConfig(membership_checks=True, worst_spans=25))
+    assert checked.variant == "paper" and checked.hash() == base.hash() and checked.data_hash() == base.data_hash()
+    assert DataConfig.__dataclass_fields__["min_traded_days"].metadata == DataConfig.__dataclass_fields__["exclude_codes"].metadata == {"hash": "post_paper"}
+
+
+@pytest.mark.parametrize(
+    "variant, overrides, message",
+    [
+        ("paper", {"data": {"min_traded_days": 120}}, "give it a variant name"),
+        ("paper", {"data": {"exclude_codes": ("SH000300",)}}, "give it a variant name"),
+        ("s", {"data": {"min_traded_days": -1}}, "min_traded_days must be a whole number >= 0"),
+        ("s", {"data": {"min_traded_days": 120.0}}, "min_traded_days must be a whole number >= 0"),
+        ("s", {"data": {"min_traded_days": True}}, "min_traded_days must be a whole number >= 0"),
+        ("s", {"data": {"exclude_codes": "SH000300"}}, "must be a list of codes"),
+        ("s", {"data": {"exclude_codes": ("SH000300", "sh000300")}}, "lists a code twice"),
+        ("paper", {"qa": {"membership_checks": "yes"}}, "membership_checks must be true or false"),
+        ("paper", {"qa": {"worst_spans": 0}}, "worst_spans must be a whole number >= 1"),
+    ],
+)
+def test_invalid_membership_and_qa_settings_raise(tmp_path: Path, variant, overrides, message):
+    with pytest.raises(ValueError, match=message):
+        synthetic_config(tmp_path, variant=variant, **overrides)
+
+
+def test_qa_and_membership_settings_load_from_yaml(tmp_path):
+    (tmp_path / "paper.yaml").write_text(PAPER.read_text())
+    (tmp_path / "qa.yaml").write_text("base: paper.yaml\nqa:\n  membership_checks: true\n")
+    (tmp_path / "listed.yaml").write_text(
+        "base: qa.yaml\nvariant: listed\ndata:\n  min_traded_days: 120\n  exclude_codes: [SZ399300, SH000300]\n"
+    )
+    (tmp_path / "typo.yaml").write_text("base: paper.yaml\nqa:\n  membership_check: true\n")
+    paper, qa, listed = (load_config(tmp_path / n) for n in ("paper.yaml", "qa.yaml", "listed.yaml"))
+    assert not paper.qa.membership_checks and qa.qa.membership_checks and qa.variant == "paper"
+    assert qa.hash() == paper.hash() and qa.data_hash() == paper.data_hash()
+    assert listed.qa.membership_checks and listed.data.min_traded_days == 120 and listed.data.exclude_codes == ("SH000300", "SZ399300")
+    assert listed.hash() != paper.hash() and listed.data_hash() != paper.data_hash()
+    assert qa.to_dict()["qa"] == {"membership_checks": True, "worst_spans": 10}  # written to a run group's config.json
+    with pytest.raises(ValueError, match="unknown keys for QAConfig"):
+        load_config(tmp_path / "typo.yaml")

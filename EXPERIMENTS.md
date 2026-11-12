@@ -1,7 +1,8 @@
 # Experiments
 
 Every training or evaluation run is logged here: date, config, data used, results, and whether the
-change was kept or dropped. Comparisons use the training and validation periods, or the walk-forward folds (history
+change was kept or dropped. Data checks that carry a pass bar or a go/no-go rule (E20-E23) are logged too;
+they train nothing and are not tries. Comparisons use the training and validation periods, or the walk-forward folds (history
 from 2008, ending 2024-02-28), only; the test period
 (2024-03-01 to 2026-03-01) is locked and was opened once, for E3 (see `locks/csi300_test.json`).
 
@@ -41,6 +42,10 @@ Common to every entry unless stated otherwise:
 | E17 | 2026-11-07 | 15 | Scheduler balance, strength 10 | `configs/scheduler_balance/bal_c1e1.yaml` (`521e530361af914f`) | `bal_c1e1` | 0.036 +- 0.033 | dropped (Rule S: no reliable specialists; rule kept by the owner); usage ok, routing fails |
 | E18 | 2026-11-08 | 6 (rerun) | Walk-forward tooling: retrain the paper config with the new code (regression check) | `configs/csi300.yaml` (`d2a65e9a6a237d2c`) | `paper_rerun3` | identical to E3 | check passed; not a candidate |
 | E19 | 2026-11-08 | - (placebo) | Walk-forward placebo (Rule WP): paper config and single network, 11 folds x 5 seeds on shuffled answers | `configs/walkforward/placebo/` | `runs/csi300_wf`: `placebo`, `placebo_single`, `smoke` | walk-forward IC +0.0010 [-0.0031, +0.0051] and +0.0028 [-0.0025, +0.0081] (not validation) | check passed |
+| E20 | 2026-11-12 | - (data only) | More data: CSI500, CSI1000 and the whole A-share market prepared from the pinned archive (Rules ND, CU) | `configs/csi500.yaml` (`d4c1d46e5e627dc6`), `configs/csi1000.yaml` (`414c423fc72b4314`), `configs/ashare.yaml` (`b44cf7c1e1d0bfe0`) and their walk-forward variants | none (prepare only) | no model run | data kept; the whole-market walk-forward data does not fit in memory and is not prepared |
+| E21 | 2026-11-12 | - (data check) | More data: membership timing audit, the archive's CSI300 and CSI500 lists against BaoStock (Rule MA) | `scripts/audit_membership.py` | none | no model run | report only: no look-ahead found; the archive shows index reviews 9-14 trading days late |
+| E22 | 2026-11-12 | - (data check) | More data: free US coverage check, fja05680 members against Tiingo's public ticker list (Rule UC) | `src/detmaso/data/ingest/us_coverage.py` | none | no model run | **failed** the 95.0% bar (91.06%): the free S&P 500 route is not good enough as it stands |
+| E23 | 2026-11-12 | - (data check) | More data: South Korea go/no-go, conversion and prepare (Rules KG, KU) | `configs/kr200.yaml` (`b126ac6b3a144ab5`) and its walk-forward variants | none (prepare only) | no model run | go/no-go **passed** (3 of 3); data kept, with known gaps |
 
 ## E1: stability diagnostics (2026-11-05)
 
@@ -224,3 +229,132 @@ No walk-forward run on the real answers was made: the first one belongs to the t
   -12% (single network) and -18% (paper config) after realistic costs (max drawdown 84-93%); at a flat 10 bps it is
   -8% and -13%. Blocked trades are rare (0.3-0.4 a day, most in 2015).
 - **Kept / dropped:** check passed. Results: [results/csi300/walkforward/placebo/](results/csi300/walkforward/placebo/).
+
+## More data (2026-11-12, E20-E23)
+
+Plan `i-want-more-free-mutable-barto.md`; owner's go-ahead 2026-11-12. Rules in [docs/RULES.md](docs/RULES.md)
+("More data: new universes and markets", Rules ND, CU, KG, KU, UC, MA), written before any data was opened. Sources
+and findings: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). **No model was trained or evaluated in this build, so it
+adds no tries**, and no number below uses a date from 2024-03-01 on. The paper config is unchanged: its two hashes
+are the frozen ones, all 35 earlier configs hash the same as before, both committed CSI300 data reports rebuild byte
+for byte, and the rebuilt CSI300 panels equal the saved ones in every field (no retraining was done for this check).
+
+### E20: CSI500, CSI1000 and the whole A-share market prepared (data only)
+
+- **Data:** the same pinned archive as CSI300 (tag `2026-11-04`). `detmaso prepare` only.
+- **New settings, all off for every earlier config:** `data.min_traded_days` (new-listing filter),
+  `data.exclude_codes`, `trading.price_limits` (per-market daily price limits; the default is China's rule as before),
+  `qa.membership_checks` (the per-year membership table in the data report).
+- **Results** (dates before 2024-03-01 only):
+
+  | Dataset | Dates checked | Members per day | Member-days | Priced share | Stocks; data ends early | Prepare time; peak memory |
+  |---|---|---|---|---|---|---|
+  | csi500 | 2012-01-04 to 2024-02-29 (2,952 days) | 500; 501 on 38 days | 1,476,038 | 96.76% | 1,420; 67 | 33 s; 7.4 GiB |
+  | csi500, walk-forward | 2008-01-02 to 2024-02-29 (3,928 days) | 500; 501 on 38 days | 1,964,038 | 96.87% | 1,648; 87 | 43 s; 10.1 GiB |
+  | csi1000 (same data for both run folders) | 2016-01-04 to 2024-02-29 (1,982 days) | 1,000; 1,001 on 242 days | 1,982,242 | 97.35% | 2,396; 90 | 41 s; 8.4 GiB |
+  | ashare | 2012-01-04 to 2024-02-29 (2,952 days) | 2,161 to 5,259, median 3,308 | 9,957,512 | 96.45% | 5,427; 172 | 105 s; 21.3 GiB |
+  | ashare, walk-forward | - | - | - | - | - | stopped at 24.5 GiB and still rising |
+
+- **Whole A-share market, walk-forward: not prepared.** The machine has 24 GB; the run was stopped while processing
+  features, as Rule CU says. The validation-period data did finish, but with heavy swapping (10.4 GiB resident, swap
+  grew from 1.0 to 7.1 GiB).
+- **Findings:**
+  - The 501st / 1,001st member is one phantom code (SZ302132) with no price before the test period; it never enters
+    the model's universe.
+  - The priced share is lowest in 2015-2016 (the 2015 mass trading halts: csi500 88.4% in 2015, csi1000 91.7% in
+    2016, ashare 85.3% in 2015) and at least 99.4% from 2019.
+  - Longest unpriced member spans: 289 trading days (csi500), 433 (csi1000), 1,110 (ashare). The reported CSI500
+    member without prices from 2012 to 2019 does not appear as a member-day gap.
+  - csi1000: the nearly empty member list before 2015-05-29 does not reach any model date (checked: wiping it
+    changes no stored value).
+  - Found during the build, not in Rule CU as first written: the archive's `all` list contains 6 index series, which
+    `configs/ashare.yaml` excludes (docs/RULES.md, "Rule changes").
+  - Known gaps of the whole-market data: no ST filter; the new-listing filter counts traded days in the loaded data
+    (one year before the first model date), so the market state on the first model dates sees about 1,700 to 2,200
+    members a day instead of the full list.
+- **Kept / dropped:** data kept. Reports: [csi500](results/csi500/data_report.md),
+  [csi500 walk-forward](results/csi500/walkforward/data_report.md), [csi1000](results/csi1000/data_report.md),
+  [csi1000 walk-forward](results/csi1000/walkforward/data_report.md), [ashare](results/ashare/data_report.md).
+
+### E21: membership timing audit against BaoStock (Rule MA; a report, not a decision)
+
+- **Inputs:** the pinned archive's `instruments/csi300.txt` and `csi500.txt`; BaoStock (anonymous login, package
+  00.9.40) queried 2026-11-12 22:32Z to 22:58Z for 206 month ends (2007-01-31 to 2024-02-29) plus the days needed to
+  date each change. All 838 answers are cached outside the repo with a hash list (sha256 `20fcbe28...`); the offline
+  mode rebuilds the report byte for byte.
+- **Results:**
+
+  | | CSI300 | CSI500 |
+  |---|---|---|
+  | Month-end mismatch share, all 206 month ends | 0.42% (258 / 61,928) | 0.56% (582 / 103,292) |
+  | Month-end mismatch share, 187 month ends with a fresh BaoStock list | 0.11% | 0.08% |
+  | Index changes paired | 1,522 | 3,428 |
+  | Archive clearly earlier than BaoStock (look-ahead) | 0 | 0 |
+  | Lag in trading days, changes BaoStock dates to the week: median / 90th percentile / longest | 9 / 14 / 102 | 13 / 21 / 98 |
+  | Changes the archive never shows | 2 | 6 |
+  | Member-days where the archive still lists a stock BaoStock had dropped, 2012-01 on | 0.55% | 1.00% |
+
+- **Reading:** the archive is late, not early. Reviews since 2013-12 appear 9 to 14 trading days late; single-stock
+  changes between reviews wait up to about 5 months, because the archive's list changes on only about 40 days in
+  17 years. For CSI300 reviews before mid-2013 the archive is 0 to 4 trading days ahead of BaoStock's weekly list,
+  which BaoStock cannot settle either way.
+- **Limits:** BaoStock is unofficial, weekly at best, and skipped updates between 2021-06 and 2023-03; the splits
+  that separate its own delays from the archive's were added after the first comparisons showed those gaps (the
+  all-inclusive numbers are shown next to them in the report).
+- **Kept / dropped:** report only; no data changed. Report: [results/csi300/membership_audit.md](results/csi300/membership_audit.md).
+
+### E22: free US coverage check (Rule UC)
+
+- **Inputs:** fja05680/sp500 at commit `a2430f2af0c79ddf0748e91de11bdeb1616ab5a7` (S&P 500 members by date,
+  unofficial); Tiingo's public list of supported tickers, downloaded 2026-11-12T22:24:27Z (sha256 `3d33d870...`).
+  No prices fetched, no API key.
+- **Rule (fixed beforehand):** a member-day is matched if Tiingo lists that ticker as a US stock with a date range
+  covering the day; pass bar 95.0% of member-days, weekdays 2008-01-01 to 2024-02-29.
+- **Result: failed. 91.06% matched (1,926,082 of 2,115,048 member-days; 848 tickers).**
+  - Tickers that left the index before 2024-03-01: 70.37% (398,121 of 565,716). Tickers still in it on 2024-02-29:
+    98.62%.
+  - Per year: 80.84% (2008) rising to 98.27% (2023); only 2020 onward clears 95%.
+  - Not part of the rule: 93.86% when the date range is ignored; 94.71% under the loosest reading (any Tiingo row
+    under the ticker), so the verdict does not hang on the details.
+  - Unmatched member-days by likely reason: ticker not listed, mostly renamed companies kept only under their new
+    ticker, 5.28% of all member-days; reused tickers 2.30%; date ranges covering only part of the membership 1.34%.
+  - The 91.06% is if anything generous: a reused ticker whose dates happen to cover the day counts as matched.
+- **Kept / dropped:** the free S&P 500 route is recorded as not good enough as it stands; no Tiingo fetch was
+  started. Report: [results/sp500/coverage_check.md](results/sp500/coverage_check.md).
+
+### E23: South Korea go/no-go, conversion and prepare (Rules KG and KU)
+
+- **Source:** FinanceData/marcap at commit `d3b703628e5a73112111d8bc43439f950762f67e` (32 yearly files, hashes in
+  `scripts/kr_data.sha256`), converted to Qlib's format by `detmaso.data.ingest.kr` with Qlib's own `dump_bin.py`
+  at a pinned commit. The conversion is deterministic (same output hash in 4 runs).
+- **Go/no-go (rules written before the data was opened; rows before 2024-03-01): GO, 3 of 3.**
+
+  | Check | Result | Numbers |
+  |---|---|---|
+  | KG1, delisted stocks present | pass | 1,151 KOSPI codes end before 2023-03-01 (bar 200); named delistings 3 of 3 (bar 2) |
+  | KG2, split adjustment right | pass | Samsung Electronics 50-for-1: factor step 50.000000; other named splits 3 of 3 within 1% (9.997, 4.993, 4.982) |
+  | KG3, suspended days identified | pass | Samsung: no price on 2018-04-30, 05-02, 05-03; a price on 04-27 and 05-04 |
+
+- **Universe (Rule KU):** 57 selection dates from 1995-11-30 to 2023-11-30, exactly 200 picks each; 648 stocks ever
+  picked, 183 with data that ends early, 76 stopped for good while a member.
+- **Prepare** (dates before 2024-03-01):
+
+  | Run | Model dates before the test period | Members per day | Member-days | Priced share | Stocks; data ends early |
+  |---|---|---|---|---|---|
+  | kr200 | from 2012-01-02 | 193 to 200, median 199 | 597,695 | 99.69% | 378; 31 |
+  | kr200, walk-forward | from 2008-01-02 | 193 to 200 | 796,968 | 99.67% | 429; 51 |
+
+- **Trading settings:** sell-side tax steps of 30, 25, 23, 20, 18, 15 and 20 bps (from 2007, 2019-05-30, 2021, 2023,
+  2024, 2025, 2026); price limits 15%, then 30% from 2015-06-15; fees 3 bps and slippage 5 bps as for China.
+- **Reported to the owner:**
+  - Rule KG2's factor chain cannot be applied on 804 rows of picked stocks (1998-01-09 to 2000-01-25) where the
+    source has no usable base price; the factor is carried over there. No row from 2007 on is affected, and no config
+    loads earlier data. The build went on instead of stopping; logged in docs/RULES.md, "Rule changes", and approved
+    by the owner the same day.
+  - Found after conversion: the move into a re-opening price (after a capital reduction, spin-off, merger or long
+    halt) is missing from returns. 82 such factor steps on member-days from 2007 on (1 to 10 a year, plain splits
+    included); example -56.7% true against -13.4% in the data. The rule was applied as written.
+  - Other gaps: no cash dividends, no delisting returns, a synthetic index series.
+- **Kept / dropped:** data kept. Reports: [go/no-go](results/kr200/go_no_go.md),
+  [conversion](results/kr200/conversion_report.md), [QA](results/kr200/data_report.md),
+  [QA, walk-forward](results/kr200/walkforward/data_report.md).
