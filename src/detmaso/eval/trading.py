@@ -210,13 +210,14 @@ def code_space_growth(flags: TradeFlags, decision_dates: pd.DatetimeIndex) -> np
     return np.where(np.isfinite(g), g, 1.0)
 
 
-def panel_growth(code_idx: np.ndarray, r_next: np.ndarray, n_codes: int) -> np.ndarray:
-    """[T, N codes] value multiples from the panel's next-day returns (1 outside the day's universe, or with no
-    price). Used for placebo runs, whose answers (and next-day returns) are shuffled: no real return may enter."""
+def panel_growth(code_idx: np.ndarray, r_next: np.ndarray, member: np.ndarray, n_codes: int) -> np.ndarray:
+    """[T, N codes] value multiples from a placebo panel's next-day returns: 1 for a stock outside the day's
+    universe, outside that day's shuffle (``member`` False: the shuffled label_ok, see data.placebo) or with no
+    price. Only members carry a shuffled next-day return, so no real return may enter."""
     g = np.ones((code_idx.shape[0], n_codes))
     for t in range(code_idx.shape[0]):
-        present = code_idx[t] >= 0
-        g[t, code_idx[t, present]] = 1.0 + np.nan_to_num(r_next[t, present], nan=0.0)
+        shuffled = member[t] & (code_idx[t] >= 0)
+        g[t, code_idx[t, shuffled]] = 1.0 + np.nan_to_num(r_next[t, shuffled], nan=0.0)
     return g
 
 

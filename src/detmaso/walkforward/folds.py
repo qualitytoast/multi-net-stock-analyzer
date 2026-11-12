@@ -1,7 +1,7 @@
 """Walk-forward folds and their market moods (docs/RULES.md, Rule WL).
 
-Fold Y trains on every model date from the history start to the end of year Y - E - 1, early-stops on the
-E years before Y (E = walkforward.early_stop_years) and is tested on year Y; the last fold's test window runs
+Fold Y trains on every model date from the history start to the end of year Y - 2, early-stops on year Y - 1
+(walkforward.early_stop_years is fixed at 1) and is tested on year Y; the last fold's test window runs
 on to walkforward.end. Each fold is an ordinary ``Splits`` (train = training, valid = early stopping, test =
 test window), so the paper trainer runs on it unchanged. Purges: ``train_fit`` and ``valid_fit`` drop the last
 ``purge_days`` dates of their window, and so does ``Fold.test_ic`` (IC days whose 20-day answers end inside

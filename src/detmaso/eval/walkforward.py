@@ -64,7 +64,7 @@ def _scores(cfg: Config, fs, folds, seeds: list[int], tag: str, calendar: pd.Dat
             per_seed[s].append({
                 "year": fold.year, "dates": dates, "ret_dates": ret_dates, "in_ic": in_ic, "ic": ic, "port": port, "bench": bench,
                 "ls": long_short(alpha, trd, rn, top), "pick_codes": [code[t, p] for t, p in enumerate(picks)],
-                "pick_returns": [rn[t, p] for t, p in enumerate(picks)], "code": code, "r_next": rn,
+                "pick_returns": [rn[t, p] for t, p in enumerate(picks)], "code": code, "r_next": rn, "label_ok": lab,
                 "entropy": -(w * np.log(w)).sum(axis=1), "w": out["w"],
             })  # fmt: skip
             summary = json.loads((d / "summary.json").read_text())
@@ -84,7 +84,7 @@ def _trade(cfg: Config, chunks: list[dict], flags, n_codes: int) -> dict[str, np
     if not np.array_equal(unblocked.port, paper, equal_nan=True):
         raise AssertionError("the unblocked portfolio does not reproduce the paper backtest")
     if cfg.is_placebo:  # shuffled answers: value holdings with the shuffled next-day returns only
-        growth = np.concatenate([panel_growth(c["code"], c["r_next"], n_codes) for c in chunks])
+        growth = np.concatenate([panel_growth(c["code"], c["r_next"], c["label_ok"], n_codes) for c in chunks])
     else:
         growth = code_space_growth(flags, dates)
     rows = flags.dates.get_indexer(dates)

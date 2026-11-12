@@ -88,6 +88,30 @@ def test_placebo_rule():
     assert not rule_wp({"a": (-0.01, 0.02)}, {"a vs b": IMPROVEMENT})["p2"]
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"avg": (0.01, float("nan"), 0.02)},  # K1 has no range to read
+        {"gains": [float("nan")] + [0.01] * 10},  # K2 cannot tell whether 2013 was won
+        {"seed_gains": (1, 1, 1, 1, float("nan"))},  # K3
+        {"sharpe": (0.1, float("nan"), float("nan"))},  # K5: a missing range is not "not entirely below 0"
+    ],
+)
+def test_the_keep_rule_refuses_numbers_that_could_not_be_computed(change):
+    """CLAUDE.md: rules are applied by code. A condition without a number behind it is neither met nor failed."""
+    args = {"gains": [0.01] * 11}
+    args.update(change)
+    with pytest.raises(ValueError, match="Rule WK cannot be applied: not finite"):
+        keep_rule(**_inputs(**args), has_setting=False)
+
+
+def test_the_next_setting_and_the_placebo_rule_refuse_missing_numbers():
+    with pytest.raises(ValueError, match="not finite: next setting's gain"):
+        keep_rule(**_inputs([0.01] * 11), has_setting=True, neighbor_gain=float("nan"))
+    with pytest.raises(ValueError, match="Rule WP cannot be applied: not finite: a low, a high"):
+        rule_wp({"a": (float("nan"), float("nan")), "b": (-0.02, 0.0)}, {"a vs b": NO_IMPROVEMENT, "b vs a": NO_IMPROVEMENT})
+
+
 # The resampling, on synthetic daily series ----------------------------------------------------------------------
 def _cfg(tmp_path, variant: str):
     cfg = synthetic_config(tmp_path, variant=variant)
@@ -159,6 +183,19 @@ def test_resampling_is_reproducible_and_independent_of_the_other_groups(tmp_path
     assert np.all((lo < sm["ic_year"].mean(axis=0)) & (sm["ic_year"].mean(axis=0) < hi))
 
 
+def test_a_day_without_an_ic_is_left_out_of_the_resampling(tmp_path):
+    """A day of equal scores has no IC (NaN). Here every other day's IC is 0.03 in every seed, so whichever days a
+    draw holds, each yearly IC is 0.03: the missing day must not turn the draws that hold it into NaN."""
+    frame = _frame(seed=1)
+    frame.loc[frame["in_ic"], "ic"] = 0.03
+    frame.loc[(frame["seed"] == 2) & (frame["decision_date"] == pd.bdate_range("2015-01-02", periods=8)[-1]), "ic"] = np.nan
+    run = frame_to_run(frame, _cfg(tmp_path, "gap"), "gap.yaml", "gap")
+    assert np.isnan(run.ic(2015)).sum() == 1
+    boot = bootstrap([run], n_boot=300)["gap"]
+    assert np.allclose(boot["ic_year"], 0.03) and np.allclose(boot["ic_avg"], 0.03)
+    assert np.allclose(seed_metrics(run)["ic_year"], 0.03)
+
+
 def test_the_after_cost_sharpe_difference_uses_the_blocked_series(tmp_path):
     """Rule WT: "after-cost Sharpe" = realistic costs with blocking, so K5 reads the blocked portfolio only."""
     frame = _frame(seed=1)
@@ -199,6 +236,8 @@ def _no_signal(seed: int) -> pd.DataFrame:
 def planted(tmp_path_factory):
     """Run groups with planted IC gains over `ref`: +0.05 (better), +0.02 (up), -0.05 (down); and placebo groups."""
     root = tmp_path_factory.mktemp("planted")
+    dead = _no_signal(10)
+    dead.loc[(dead["seed"] == 0) & (dead["year"] == 2015), "ic"] = np.nan  # equal scores all year: seed 0 has no 2015 IC
     groups = {
         "ref": _plant(root, "ref", _frame(seed=1)),
         "better": _plant(root, "better", _frame(ic_shift=0.05, seed=2)),
@@ -207,6 +246,7 @@ def planted(tmp_path_factory):
         "placebo_a": _plant(root, "placebo_a", _no_signal(7), placebo=True),
         "placebo_b": _plant(root, "placebo_b", _no_signal(8), placebo=True),
         "placebo_leak": _plant(root, "placebo_leak", _frame(seed=9), placebo=True),  # IC 0.05 on "shuffled answers"
+        "placebo_dead": _plant(root, "placebo_dead", dead, placebo=True),
     }
     return root, groups
 
@@ -256,6 +296,12 @@ def test_compare_applies_the_placebo_rule(planted):
     assert all(lo < 0 < hi for lo, hi in p["levels"].values())
     leak = _compare(planted, ["placebo_leak", "placebo_b"], "placebo_b", rule="placebo")
     assert not leak["p1"] and not leak["pass"] and leak["levels"]["placebo_leak"][0] > 0
+
+
+def test_compare_gives_no_placebo_verdict_when_a_range_cannot_be_computed(planted):
+    """A seed with no IC in one year leaves that year's ranges undefined: the placebo must not "pass" on them."""
+    with pytest.raises(ValueError, match="cannot be applied: not finite"):
+        _compare(planted, ["placebo_dead", "placebo_b"], "placebo_b", rule="placebo")
 
 
 def test_compare_refuses_wrong_tags_and_misused_rules(planted):

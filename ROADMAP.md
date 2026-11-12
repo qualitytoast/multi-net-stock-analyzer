@@ -63,7 +63,7 @@ Last updated: 2026-11-08
     8 bps, sells 18 bps, 13 bps from 2023-08-28), blocked trades at price limits and suspensions, the long-short spread.
   - `evaluate --split walkforward` (per-year and joined metrics with 95% ranges, cost table, moods per fold, try number,
     deflated Sharpe and IC) and `compare --split walkforward` with `--rule keep` (Rule WK, including the new after-cost
-    Sharpe condition K5 approved by the owner) and `--rule placebo` (Rule WP); 194 tests.
+    Sharpe condition K5 approved by the owner) and `--rule placebo` (Rule WP); 213 tests.
   - Data: 2007-2026 prepared separately (`runs/csi300_wf`); 2008-2011 pass the per-year check.
   - Paper config unchanged: retrained models identical to `final` in every weight (E18); validation report reproduced
     byte for byte.

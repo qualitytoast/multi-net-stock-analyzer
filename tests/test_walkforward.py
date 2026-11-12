@@ -59,6 +59,14 @@ def test_invalid_walkforward_layouts_raise(tmp_path, change, message):
         dataclasses.replace(cfg, variant="wf", **change)
 
 
+def test_early_stopping_is_fixed_at_the_one_year_before_the_test_year():
+    """Decision D4 (docs/RULES.md, Rule WL): each fold early-stops on calendar year Y-1, so no other length is a layout."""
+    assert WalkForwardConfig().early_stop_years == 1
+    for years in (0, 2):
+        with pytest.raises(ValueError, match="early_stop_years must be 1.*decision D4"):
+            WalkForwardConfig(early_stop_years=years)
+
+
 # Fold layout ---------------------------------------------------------------------------------------------------
 def _wf_config(run_dir: Path, variant: str = "wf_test", **overrides):
     cfg = synthetic_config(run_dir, variant=variant, train={"max_epochs": 3, "seeds": (0, 1)}, model={"dtype": "float64"}, **overrides)
@@ -98,8 +106,12 @@ def test_check_fold_refuses_a_window_touching_the_test_period(tmp_path):
 
 
 # A synthetic prepared market on disk ----------------------------------------------------------------------------
-def make_market(cfg, n_stocks: int = 60, seed: int = 0) -> None:
-    """Writes the prepared panel, market state, regimes and raw price cache that `prepare` would."""
+def make_market(cfg, n_stocks: int = 60, seed: int = 0, stuck: tuple[int, list[int]] | None = None) -> None:
+    """Writes the prepared panel, market state, regimes and raw price cache that `prepare` would.
+
+    stuck = (calendar row, stock columns): those stocks fall 15% to their lower price limit on that row (they
+    cannot be sold at its close) and are suspended for one day 25 rows later.
+    """
     from detmaso.data.panel import artifacts_dir
     from detmaso.data.qlib_io import cache_dir
 
@@ -111,6 +123,12 @@ def make_market(cfg, n_stocks: int = 60, seed: int = 0) -> None:
     drift = 0.004 * X[..., 3] + 0.015 * rng.normal(size=X.shape[:2])  # tomorrow's move depends on feature 3
     close = pd.DataFrame(10 * np.exp(np.cumsum(drift, axis=0)), index=cal, columns=codes)
     close.iloc[300:303, 2] = np.nan  # a suspension
+    if stuck is not None:
+        close.iloc[stuck[0] :, stuck[1]] *= 0.85
+        close.iloc[stuck[0] + 25, stuck[1]] = np.nan
+    low = close * 0.99
+    if stuck is not None:
+        low.iloc[stuck[0], stuck[1]] = close.iloc[stuck[0], stuck[1]]  # closed at the day's low
     regime_wave = np.sin(np.arange(len(cal)) / 40.0)
     state = pd.DataFrame(rng.normal(size=(len(cal), 12)) + regime_wave[:, None] * np.linspace(0.5, 3, 12), index=cal, columns=state_names((5, 20, 60, 120)))
     rows = cal.get_indexer(DATES)
@@ -141,7 +159,7 @@ def make_market(cfg, n_stocks: int = 60, seed: int = 0) -> None:
     pd.DataFrame(True, index=cal, columns=codes).to_parquet(raw / "member.parquet")
     close.to_parquet(raw / "close.parquet")
     (close * 1.01).to_parquet(raw / "high.parquet")
-    (close * 0.99).to_parquet(raw / "low.parquet")
+    low.to_parquet(raw / "low.parquet")
 
 
 @pytest.fixture(scope="module")
@@ -241,6 +259,35 @@ def test_a_run_deflates_with_its_own_walkforward_metrics_in_the_ledger(trained, 
     assert deflated["ic_sd"] == pytest.approx(np.std([0.010, 0.030, own["wf_ic"]], ddof=1))
     assert deflated["sr_sd"] == pytest.approx(np.std([0.02, 0.05, own["wf_excess_sr_daily_net"]], ddof=1))
     assert "Try #3 of 3 counted tries" in (third.run_path / "third" / "report_wf.md").read_text()
+
+
+def test_no_real_return_enters_a_placebo_evaluation(tmp_path):
+    """docs/RULES.md, Rule WT: placebo holdings earn shuffled next-day returns only. Two thirds of the stocks close at
+    their lower limit on the first day of a placebo block that they are not shuffled in (a later suspension leaves them
+    without a 20-day answer there), so the ones picked the day before stay held with their real return in the panel.
+    Changing that real return must change nothing in the placebo's daily series."""
+    from detmaso.data.panel import artifacts_dir
+    from detmaso.eval.walkforward import evaluate_walkforward
+    from detmaso.eval.wf_stats import SERIES_FILE
+    from detmaso.walkforward.runner import train_walkforward
+
+    cfg = _wf_config(tmp_path / "runs", variant="wf_placebo")
+    cfg = dataclasses.replace(cfg, placebo=dataclasses.replace(cfg.placebo, shuffle_seed=0))
+    row, cols = 560, list(range(40))  # placebo blocks are 20 model dates: row 560 opens the block after rows 540-559
+    assert cfg.placebo.block_days == 20 and DATES[row - 20].year == DATES[row + 39].year == 2018
+    make_market(cfg, stuck=(row, cols))
+    train_walkforward(cfg, "placebo.yaml", "placebo", [0], years=[2018], jobs=1)
+
+    def series() -> pd.DataFrame:
+        evaluate_walkforward(cfg, "placebo.yaml", "placebo", [0], years=[2018])
+        return pd.read_parquet(cfg.run_path / "placebo" / SERIES_FILE)
+
+    before = series()
+    assert before.set_index("decision_date").loc[DATES[row], "blocked_sells"] >= 1  # a stuck stock is held over that day
+    panel = Panel.load(artifacts_dir(cfg) / "panel.pt")
+    panel.r_next[row, cols] = 0.5  # the real next-day return of the stuck stocks: +50%
+    panel.save(artifacts_dir(cfg) / "panel.pt")
+    pd.testing.assert_frame_equal(series(), before)
 
 
 def test_evaluation_series_reproduce_the_paper_backtest_and_purge_ic(trained):

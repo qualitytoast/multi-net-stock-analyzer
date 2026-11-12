@@ -232,7 +232,7 @@ def bootstrap(runs: list[WFRun], n_boot: int = N_BOOT, block: int = BLOCK, rng_s
             ic_idx = block_indices(rng, int(ref.in_ic[y].sum()), block, b)
             ret_idx = block_indices(rng, len(ref.dec[y]), block, b)
             for r in runs:
-                per_seed = ics[r.name][y][:, ic_idx].mean(axis=-1)  # [S, b]
+                per_seed = np.nanmean(ics[r.name][y][:, ic_idx], axis=-1)  # [S, b]; a day without an IC is left out, as in seed_metrics
                 out[r.name]["ic_year"][fi, lo:hi] = np.take_along_axis(per_seed.T, seed_idx[r.name][lo:hi], axis=1).mean(axis=1)
                 for k, by_year in rets[r.name].items():
                     x = by_year[y][:, ret_idx]  # [S, b, n_f]

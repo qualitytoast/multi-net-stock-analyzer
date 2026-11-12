@@ -174,6 +174,13 @@ def rule_p(pooled_low: float, chosen: dict | None) -> dict:
 
 
 # Walk-forward keep rule (docs/RULES.md, Rule WK) --------------------------------------------------------------
+def _refuse_non_finite(rule: str, numbers: dict[str, float]) -> None:
+    """A rule gives no verdict on a number that could not be computed."""
+    bad = [name for name, v in numbers.items() if not np.isfinite(v)]
+    if bad:
+        raise ValueError(f"Rule {rule} cannot be applied: not finite: {', '.join(bad)}")
+
+
 def keep_rule(
     yearly: dict[int, dict], average: dict, seed_gains: dict[int, float], sharpe: dict, has_setting: bool,
     neighbor_gain: float | None = None, target_years: list[int] | None = None,
@@ -184,8 +191,16 @@ def keep_rule(
     average = {"gain", "low", "high"}: the mean of the yearly gains; seed_gains[seed] = that seed's mean yearly gain;
     sharpe = {"diff", "low", "high"}: after-cost Sharpe difference; neighbor_gain = the next setting's average gain
     (required when has_setting); target_years = the years a targeted change declared in advance (None = general form).
+    Raises when any of these numbers is not finite.
     """
     years = sorted(yearly)
+    _refuse_non_finite("WK", {
+        **{f"{y} {k}": yearly[y][k] for y in years for k in ("gain", "low", "high")},
+        **{f"average {k}": average[k] for k in ("gain", "low", "high")},
+        **{f"seed {s} gain": g for s, g in seed_gains.items()},
+        **{f"after-cost Sharpe {k}": sharpe[k] for k in ("diff", "low", "high")},
+        **({} if neighbor_gain is None else {"next setting's gain": neighbor_gain}),
+    })  # fmt: skip
     k1 = average["low"] > 0
     wins = [y for y in years if yearly[y]["gain"] > 0]
     if target_years:
@@ -222,7 +237,8 @@ def keep_rule(
 
 def rule_wp(levels: dict[str, tuple[float, float]], keep_verdicts: dict[str, str]) -> dict:
     """Rule WP (walk-forward placebo). levels[group] = 95% range of its average IC; keep_verdicts[pair] = Rule WK
-    verdicts between the placebo groups, in both directions."""
+    verdicts between the placebo groups, in both directions. Raises when a range bound is not finite."""
+    _refuse_non_finite("WP", {f"{group} {end}": v for group, (lo, hi) in levels.items() for end, v in (("low", lo), ("high", hi))})
     p1 = all(not lo > 0 for lo, _ in levels.values())
     p2 = all(v != IMPROVEMENT for v in keep_verdicts.values())
     return {"p1": p1, "p2": p2, "pass": bool(p1 and p2), "levels": levels, "keep_verdicts": keep_verdicts}

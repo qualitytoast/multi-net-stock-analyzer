@@ -95,8 +95,22 @@ def test_growth_uses_last_traded_closes():
     g = code_space_growth(f, dates[:3])
     assert g[:, 0].tolist() == pytest.approx([1.0, 1.0, 1.2])  # the suspended stock earns its move when it trades again
     assert g[:, 1].tolist() == pytest.approx([1.1, 1.0, 1.0])
-    pg = panel_growth(np.array([[0, -1], [1, 0]]), np.array([[0.1, np.nan], [np.nan, -0.5]]), 2)
-    assert np.allclose(pg, [[1.1, 1.0], [0.5, 1.0]])
+
+
+def test_placebo_growth_comes_from_shuffled_returns_only():
+    """Rule WT: a placebo holding earns its shuffled next-day return, or 0 when it has none (outside the day's
+    universe, outside the shuffle, or no price); a stock outside the shuffle still carries its real return."""
+    code_idx = np.array([[0, -1, 2], [1, 0, 2]])  # panel columns -> stock codes; day 1 lists stock 1 before stock 0
+    r_next = np.array([[0.1, np.nan, 0.2], [np.nan, -0.5, -0.3]])
+    member = np.array([[True, False, True], [True, True, False]])  # stock 2 leaves the shuffle on day 1: its -30% is real
+    pg = panel_growth(code_idx, r_next, member, 3)
+    assert np.allclose(pg, [[1.1, 1.0, 1.2], [0.5, 1.0, 1.0]])
+    # stock 2 is bought on day 0 and cannot be sold on day 1: the whole portfolio is stuck in it, and it earns 0
+    can = np.ones((2, 3), dtype=bool)
+    can_sell = can.copy()
+    can_sell[1, 2] = False
+    ex = simulate_blocked([np.array([2]), np.array([0])], pg, can, can_sell)
+    assert ex.port.tolist() == pytest.approx([0.2, 0.0]) and ex.blocked_sells.tolist() == [0, 1]
 
 
 def test_cost_rates_and_the_stamp_duty_switch():

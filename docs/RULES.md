@@ -175,7 +175,7 @@ every later change is judged. They are implemented in code (`detmaso.walkforward
 - Without blocking, the gross returns are exactly the paper backtest's (a held stock with no next-day price earns 0
   that day).
 - Placebo runs (shuffled answers) value holdings with the shuffled next-day returns (a stock outside the day's
-  universe earns 0), so no real return enters a placebo result.
+  universe, or outside that block's shuffle, earns 0), so no real return enters a placebo result.
 - Long-short spread: top 10% minus bottom 10% of the eligible stocks, equal weights, gross, no blocking. A signal
   measure only (shorting is restricted in China), never a tradable result.
 - "After-cost Sharpe" = Sharpe of the daily net return with realistic costs and blocking.

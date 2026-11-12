@@ -118,7 +118,7 @@ try numbers from [results/csi300/trials.csv](results/csi300/trials.csv), validat
 # Python 3.12 is required (pyqlib 0.9.7 has no 3.13 wheels); uv installs it for you.
 uv sync
 ./scripts/get_cn_data.sh        # pinned community Qlib CN dataset, verified by sha256 (about 570 MB)
-uv run pytest                   # 194 tests; data-dependent ones skip until `prepare` has run
+uv run pytest                   # 213 tests; data-dependent ones skip until `prepare` has run
 ```
 
 ## Run
@@ -202,7 +202,7 @@ uv run detmaso compare  --split walkforward --reference wf --out results/csi300/
 - **Keep rule as code.** `compare --rule keep` applies the CLAUDE.md keep rule (Rule WK): the average IC gain's 95%
   range above 0, at least 8 of 11 years won (or the targeted form), at least 4 of 5 seeds gaining, the next setting
   over also gaining, and the after-cost Sharpe not detectably worse. `--rule placebo` applies Rule WP to two placebo
-  run groups.
+  run groups. Both refuse to give a verdict when a number they need could not be computed (not finite).
 - A walk-forward configuration is one try in the ledger; each fold and seed is a job (`<tag>:Y<year>:s<seed>`,
   marked `aborted: <reason>` when it fails or the run is interrupted, and retrained by the next `train`), and
   `evaluate --split walkforward` adds its walk-forward metrics before it computes the report's deflated numbers.

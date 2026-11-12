@@ -176,22 +176,25 @@ class BacktestConfig:
 class WalkForwardConfig:
     """Walk-forward evaluation (docs/RULES.md, Rule WL); the section is absent (None) in every other config.
 
-    Fold Y (first_test_year <= Y <= last_test_year): train from splits.train[0] to the end of year
-    Y - early_stop_years - 1, early-stop on the early_stop_years before Y, test on year Y. The last fold's
-    test window runs on to ``end``, which must lie before the locked test period.
+    Fold Y (first_test_year <= Y <= last_test_year): train from splits.train[0] to the end of year Y - 2,
+    early-stop on year Y - 1, test on year Y. The last fold's test window runs on to ``end``, which must lie
+    before the locked test period.
     """
 
     first_test_year: int = 2013
     last_test_year: int = 2023
     end: str = "2024-02-28"
-    early_stop_years: int = 1
+    early_stop_years: int = 1  # fixed: early stopping on the one calendar year before the test year (decision D4)
     moods: str = "per_fold"  # Rule WL: K-means moods and scheduler scaling refit on each fold's pre-test days
 
     def __post_init__(self):
         if self.moods not in WF_MOODS:
             raise ValueError(f"walkforward.moods must be one of {WF_MOODS}, got {self.moods!r}")
-        if self.early_stop_years < 1:
-            raise ValueError("walkforward.early_stop_years must be >= 1")
+        if self.early_stop_years != 1:
+            raise ValueError(
+                f"walkforward.early_stop_years must be 1, got {self.early_stop_years}: every fold early-stops on the one "
+                "calendar year before its test year (decision D4; docs/RULES.md, Rule WL)"
+            )
         if self.last_test_year < self.first_test_year:
             raise ValueError("walkforward.last_test_year must be >= first_test_year")
         end = pd.Timestamp(self.end)
