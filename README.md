@@ -31,7 +31,7 @@ most common regimes, and the agents tied to rare regimes get almost no learning 
 training run at all required four documented changes to planned defaults (GELU, decoupled weight
 decay, float64, a defined score for constant agent output); a fifth change concerns only the
 excess-return benchmark. All five were approved by the project owner (see DEVIATIONS.md).
-S&P 500 is deferred until a point-in-time data source is chosen.
+S&P 500 is deferred: the free data route failed its coverage check (see "More data" below).
 
 **Step 1 (2026-11-06): does the 5-agent idea help?** No, not on our data. On the validation period, a
 single plain network the size of one Det-MASO agent, trained with only the IC and Sharpe loss terms,
@@ -64,9 +64,23 @@ numbers moved, in the second decimal.)
 Details: [placebo
 comparison](results/csi300/walkforward/placebo/comparison.md), rules in [docs/RULES.md](docs/RULES.md).
 
-The market data is not included in this repository: it is downloaded by `scripts/get_cn_data.sh`
-from the community Qlib dataset (chenditc/investment_data), whose data has no explicit license, so
-the dataset is not redistributed here.
+**More data (2026-11-12): built, no model run yet.** Beyond CSI300 there are now four more datasets, each with its
+own config, locked test period (2024-03-01 on), try ledger and data QA report: CSI500, CSI1000 and the whole
+A-share market from the same pinned archive, and a South Korea top 200 built from a free daily snapshot of every
+Korean stock (its go/no-go checks, written beforehand, passed: delisted stocks are present, split adjustments come
+out right, suspensions are identified). They are extra checks next to CSI300; the keep rule is unchanged. The free
+S&P 500 route failed its check: only 91.06% of member-days (one stock on one day it was in the index) can be matched
+to a listed ticker, against a bar of 95.0%, and only 70.37% for stocks that later left the index. A membership audit
+of the China archive's index lists found no paired index change shown early (0 of 4,950); of the 3 archive changes
+with no BaoStock partner, 1 (SZ302132) is ahead of BaoStock, a phantom member with no prices that never enters the
+universe. The lists show index reviews 9 to 14 trading days late.
+Known gaps: the whole-market walk-forward data does not fit in memory yet and has no ST filter; the Korea data has no
+cash dividends and misses re-opening moves after capital reductions and long halts. Details:
+[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md), EXPERIMENTS E20-E23.
+
+The market data is not included in this repository. The China data is downloaded by `scripts/get_cn_data.sh`
+from the community Qlib dataset (chenditc/investment_data), and the Korea data by `scripts/get_kr_data.sh` from
+FinanceData/marcap; neither has an explicit license, so no data is redistributed here.
 
 ## Results
 
@@ -113,6 +127,7 @@ try numbers from [results/csi300/trials.csv](results/csi300/trials.csv), validat
 | A Det-MASO-sized single network | 9 | IC 0.101 +- 0.007 vs 0.103 +- 0.002 for the one-agent size | More weights changed nothing | E7 |
 | Det-MASO's 5-agent machinery itself, as the paper trains it | 6 vs 8 | IC 0.062 +- 0.010 vs 0.103 +- 0.002 for one plain network; Det-MASO's lead -0.041 [-0.088, +0.011] | Does not beat a single network on our data (still the reproduction's subject, so kept as the reference) | [Step 1](results/csi300/single_vs_ensemble/README.md) |
 | Load-balancing penalty on the scheduler (strengths 0.03-10) | 11-16 | Usage fixed from 0.1 up; specialists not reliable (mostly Tail-Risk); IC 0.036-0.072, no detectable difference from 0.062; deflated IC at most 72% | Its pre-written rule found no reliable specialists ("all agents used, but no specialists"); the owner kept the rule as written | [write-up](results/csi300/scheduler_balance/README.md), E12-E17 |
+| Free S&P 500 data (fja05680 member list + Tiingo prices) | - (data check) | 91.06% of member-days matched to a listed ticker (1,926,082 of 2,115,048); 70.37% for stocks that left the index; bar 95.0% | Failed the coverage check written beforehand: the gap is survivorship (renamed and delisted companies are missing) | E22, [report](results/sp500/coverage_check.md) |
 
 ## Setup
 
@@ -120,7 +135,10 @@ try numbers from [results/csi300/trials.csv](results/csi300/trials.csv), validat
 # Python 3.12 is required (pyqlib 0.9.7 has no 3.13 wheels); uv installs it for you.
 uv sync
 ./scripts/get_cn_data.sh        # pinned community Qlib CN dataset, verified by sha256 (about 570 MB)
-uv run pytest                   # 215 tests; data-dependent ones skip until `prepare` has run
+uv run pytest                   # 421 tests; data-dependent ones skip until `prepare` has run
+
+# Optional, South Korea: pinned source (about 1 GB), then the go/no-go checks and the conversion it prints
+./scripts/get_kr_data.sh
 ```
 
 ## Run
@@ -178,6 +196,19 @@ The load-balancing configs live in `configs/scheduler_balance/`: the strength pi
 strengths as `bal_c*.yaml`, and the placebo versions in `placebo/`. The full command sequence is in the
 [write-up](results/csi300/scheduler_balance/README.md).
 
+### More markets
+
+Each market has a validation-period config and walk-forward variants; only `prepare` has been run on them so far:
+
+```bash
+uv run detmaso prepare --config configs/csi500.yaml                    # also csi1000, ashare, kr200
+uv run detmaso prepare --config configs/walkforward/csi500/paper.yaml  # also csi1000, kr200 (ashare does not fit in 24 GB)
+```
+
+Data checks behind them: `scripts/audit_membership.py` (index membership timing against BaoStock) and
+`python -m detmaso.data.ingest.us_coverage` (the free S&P 500 coverage check; inputs from
+`scripts/get_us_coverage_data.sh`). Sources and results: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
+
 ### Walk-forward evaluation
 
 The yardstick for every later change (docs/RULES.md, "Walk-forward evaluation"). A walk-forward config
@@ -233,19 +264,30 @@ unless `--extra-test-run "reason"` records it. Development uses the training and
 | `runs/csi300_wf/<tag>/` | `series_wf.parquet` (per seed and test day: fold, IC, paper backtest, benchmark, long-short, buys and sells with and without blocked trades), `results_wf.json`, `report_wf.md`, `figures_wf/`, `folds.json` |
 | `results/csi300/trials.csv` | the try ledger (git-tracked): every trained configuration, its kind (counted try, placebo or training-only), run groups, seed (or walk-forward job) statuses, validation and walk-forward metrics |
 | `docs/RULES.md` | the decision rules, written before each change's first run, and the grids set by pilots |
+| `results/<market>/data_report.md`, `results/<market>/walkforward/data_report.md` | data QA of the newer datasets (csi500, csi1000, ashare, kr200): per-year members, priced share of member-days, stocks whose data ends early, longest unpriced spans |
+| `results/kr200/go_no_go.md`, `results/kr200/conversion_report.md` | the Korea go/no-go checks and the conversion report (universe per year, factor steps, known gaps) |
+| `results/sp500/coverage_check.md` | the free US coverage check (failed) |
+| `results/csi300/membership_audit.md` | index membership timing of the China archive against BaoStock |
 
 ## Layout
 
 ```
 configs/               csi300.yaml (the paper config) and variants that inherit it with `base:`;
                        scheduler_balance/ (pilot, grid strengths, placebo versions);
-                       walkforward/ (the walk-forward layer, the paper config and the single network, placebo versions)
-docs/                  PLAN.md (the MVP design), RULES.md (decision rules fixed before each change's first run)
+                       walkforward/ (the walk-forward layer, the paper config and the single network, placebo versions,
+                       and one folder per newer market);
+                       csi500.yaml, csi1000.yaml, ashare.yaml, kr200.yaml (the paper method on other universes)
+docs/                  PLAN.md (the MVP design), RULES.md (decision rules fixed before each change's first run),
+                       DATA_SOURCES.md (free data sources: what is used, what was measured, what to avoid)
+scripts/               pinned downloads (China, Korea, US coverage inputs), their pins (*.pins) and hashes, and
+                       the membership audit
 src/detmaso/
   config.py            typed config; every assumption is a named value; post-paper flags, `base:` inheritance
-                       (one file or a list), placebo, walkforward and trading (evaluation-only) sections
+                       (one file or a list), placebo, walkforward, trading and qa (evaluation-only) sections
   data/                qlib_io, returns, labels, features (34), market_state (12), regimes, splits, panel, qa,
-                       placebo (answers shuffled in 20-day blocks)
+                       placebo (answers shuffled in 20-day blocks),
+                       ingest/ (kr: the Korea converter and its go/no-go checks; us_coverage: the free US check;
+                       pins: reads the pin files in scripts/)
   model/               agent MLP, scheduler (window encoders + attention + head), DetMASO,
                        single network baseline (single.py), factory (model.kind)
   losses/              soft rank (Blondel et al. L2, exact PAV), masked statistics, the full objective,
@@ -263,7 +305,8 @@ src/detmaso/
 tests/                 the plan's 30 checks plus the post-MVP ones (frozen paper config, golden training
                        run, single network, config inheritance, comparison statistics, balance penalty,
                        placebo, deflated metrics, try ledger, rules, walk-forward folds and runner, trading,
-                       the keep rule)
+                       the keep rule, the newer markets' configs, the Korea converter, the US coverage check,
+                       the membership audit, the pin files)
 ```
 
 ## Copyright

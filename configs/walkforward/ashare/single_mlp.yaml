@@ -1,0 +1,11 @@
+# The Step 1 single network on the whole A-share market, evaluated walk-forward: paper.yaml with the
+# single-network settings of configs/csi300_single_mlp.yaml (one network, IC and Sharpe terms only).
+base: paper.yaml
+variant: wf_single_mlp_listed120
+
+model:
+  kind: single_mlp
+
+loss:
+  c_div: 0.0  # identically zero for one network; set explicitly (config validation requires it)
+  c_ent: 0.0  # no scheduler, so no entropy term

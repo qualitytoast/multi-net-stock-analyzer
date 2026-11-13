@@ -1,0 +1,22 @@
+# The paper method (configs/csi300.yaml, unchanged) on the CSI1000 index: small-cap China stocks, as an extra
+# check next to CSI300 (docs/RULES.md, "More data", Rules ND and CU). Same pinned archive.
+#
+# Rule CU: the archive's CSI1000 member list is usable from 2015-05-29 only (3 members before that day), and
+# the market state needs 120 days of a full member list, so the history starts 2016-01-01. Data is loaded from
+# 2015-01-01 for the feature warm-up; the first model date's market state reads member returns from 2015-07
+# on (the data report shows the exact dates and the member count on them).
+# Its own market name: separate try ledger (results/csi1000/trials.csv) and test lock (locks/csi1000_test.json).
+base: csi300.yaml
+market: csi1000
+run_dir: runs/csi1000
+
+data:
+  universe: csi1000
+  index_symbol: SH000852  # the CSI1000 price index (plots only)
+  load_start: "2015-01-01"
+
+splits:
+  train: ["2016-01-01", "2022-12-31"]  # valid and test as in configs/csi300.yaml
+
+qa:
+  membership_checks: true  # Rule ND: per-year members, priced share and survivorship in the data report

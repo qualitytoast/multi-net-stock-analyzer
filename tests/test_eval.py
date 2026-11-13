@@ -155,3 +155,47 @@ def test_verdict_rules_in_order():
     assert band_status("ic", 0.081 - 0.015, 0.081) == "reproduced band"
     assert band_status("mdd", 0.085 + 0.05, 0.085) == "close band"
     assert band_status("mdd", 0.02, 0.085) == "exceeds paper"
+
+
+# Markets without paper numbers ------------------------------------------------------------------------------
+def test_markets_without_paper_numbers_get_no_paper_columns_and_no_verdict():
+    from detmaso.eval.report import PAPER, headline_rows, paper_numbers, verdict
+
+    assert paper_numbers("csi300") is PAPER["csi300"] and paper_numbers("sp500") is PAPER["sp500"]
+    assert all(paper_numbers(m) is None for m in ("csi500", "csi1000", "ashare", "kr200", "synthetic"))
+    means = {"ic": (0.0712, 0.004), "icir": (0.55, 0.03), "sharpe": (1.5, 0.2), "ar": (0.25, 0.03), "mdd": (0.10, 0.01)}
+    header, rows = headline_rows(means, None)
+    assert header == ["Metric", "Ours"]
+    assert rows == [["IC", "0.071 +- 0.004"], ["ICIR", "0.550 +- 0.030"], ["Sharpe", "1.500 +- 0.200"], ["Annual return", "25.0% +- 3.0%"], ["Max drawdown", "10.0% +- 1.0%"]]
+    header, with_paper = headline_rows(means, paper_numbers("csi300"))
+    assert header == ["Metric", "Ours", "Paper (Table 5/7)", "Band status"]
+    assert with_paper == [
+        ["IC", "0.071 +- 0.004", "0.081", "reproduced band"], ["ICIR", "0.550 +- 0.030", "0.620", "reproduced band"],
+        ["Sharpe", "1.500 +- 0.200", "1.850", "reproduced band"], ["Annual return", "25.0% +- 3.0%", "31.5%", "reproduced band"],
+        ["Max drawdown", "10.0% +- 1.0%", "8.5%", "reproduced band"],
+    ]  # fmt: skip
+    assert headline_rows(means, paper_numbers("sp500"))[1][1] == ["ICIR", "0.550 +- 0.030", "-", "n/a"]  # the paper gives no S&P 500 ICIR
+    good_q = {f"q{i}_ok": True for i in range(1, 5)}
+    with pytest.raises(ValueError, match="the paper reports no numbers for market 'csi500'"):
+        verdict("csi500", {k: v[0] for k, v in means.items()}, good_q)
+
+
+def test_validation_report_for_a_market_without_paper_numbers(tmp_path):
+    """Prepare, train and evaluate the paper method on a market the paper does not report: the report is written,
+    without paper columns or bands (it used to stop on a missing table entry)."""
+    from detmaso.data.panel import load_prepared, save_prepared
+    from detmaso.eval.report import evaluate_and_report
+    from detmaso.train.trainer import train_seed
+    from tests.test_data import _market, _prepare
+
+    fields, member = _market(n_stocks=60)
+    cfg, data = _prepare(tmp_path, fields, member, train={"max_epochs": 3}, model={"dtype": "float64"})
+    assert cfg.variant == "paper" and cfg.market == "synthetic"
+    save_prepared(data, cfg)
+    panel, _, splits = load_prepared(cfg)
+    train_seed(cfg, panel, splits, seed=0, out_dir=cfg.run_path / "t" / "seed0")
+    report = evaluate_and_report(cfg, "t", [0], "valid").read_text()
+    assert report.startswith("# Det-MASO reproduction: synthetic, valid split")
+    assert "- The paper reports no numbers for `synthetic`: the paper method on another market, with no paper comparison and no verdict" in report
+    assert "| Metric | Ours |\n|---|---|\n| IC |" in report and "Paper (Table 5/7)" not in report and "Band status" not in report
+    assert "## Qualitative checks" in report and (cfg.run_path / "t" / "figures_valid" / "cumulative_return.png").exists()

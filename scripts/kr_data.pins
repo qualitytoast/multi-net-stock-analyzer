@@ -1,0 +1,8 @@
+# Pinned inputs of the South Korea dataset (docs/RULES.md, Rules ND and KG): one KEY="value" per line.
+# Sourced by scripts/get_kr_data.sh and read by src/detmaso/data/ingest/kr.py. Change a pin here and nowhere else;
+# a pin change is a rule change (docs/RULES.md, "Rule changes").
+# MARCAP_COMMIT is the newest commit of the default branch on 2026-11-12.
+MARCAP_REPO="https://github.com/FinanceData/marcap.git"
+MARCAP_COMMIT="d3b703628e5a73112111d8bc43439f950762f67e"
+QLIB_COMMIT="b87a2c294d364a33fb739359886acffe8ec907d1"
+DUMP_BIN_SHA256="b8f34c57ce1ef4b1772f3909735e66058f21b25bd7ab8a5f16318822401fe53f"

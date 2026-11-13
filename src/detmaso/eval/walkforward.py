@@ -108,7 +108,7 @@ def evaluate_walkforward(cfg: Config, config_path: str, tag: str, seeds: list[in
         raise SystemExit(f"run group '{tag}' has untrained jobs: {missing[:5]}{' ...' if len(missing) > 5 else ''}")
     raw = cache_dir(cfg)
     calendar = pd.read_parquet(raw / "member.parquet").index
-    flags = trade_flags(*(pd.read_parquet(raw / f"{f}.parquet") for f in ("close", "high", "low")))
+    flags = trade_flags(*(pd.read_parquet(raw / f"{f}.parquet") for f in ("close", "high", "low")), cfg.trading)
     if flags.codes != fs.panel.code_list:
         raise AssertionError("raw price columns do not match the panel's stock codes")
     per_seed, facts = _scores(cfg, fs, folds, seeds, tag, calendar)

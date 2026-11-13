@@ -1,0 +1,5 @@
+# The paper method on South Korea (configs/kr200.yaml), evaluated walk-forward: the same 11 folds as CSI300
+# (test years 2013-2023, history from 2008, data loaded from 2007; see ../_layer.yaml).
+base: [../../kr200.yaml, ../_layer.yaml]
+run_dir: runs/kr200_wf  # ../_layer.yaml names CSI300's folder
+variant: wf_paper

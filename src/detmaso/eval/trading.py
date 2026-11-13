@@ -10,6 +10,7 @@ The paper backtest (eval.backtest.top_decile_backtest) is left untouched; this m
 - With blocking (``simulate_blocked``): at the close of day t a stock that did not trade on t, or closed at its
   lower price limit, cannot be sold or reduced, and a stock that closed at its upper limit cannot be bought or
   increased. Weight that cannot be placed stays in cash (return 0); the other picks share the rest equally.
+  The limits are the market's own, from the config (``trading.price_limits``; the default is China's).
   Holdings are valued at their last traded close, so a suspended stock earns its whole move when it trades again.
 - Long-short spread: top 10% minus bottom 10% of the eligible stocks, equal weights, gross, never blocked.
 """
@@ -26,20 +27,30 @@ from detmaso.config import TradingConfig
 from detmaso.data.returns import prev_traded_close
 
 LIMIT_TOL = 0.005  # "at the limit": within 0.5 percentage points of it
-MAIN_LIMIT, GROWTH_LIMIT = 0.10, 0.20
-CHINEXT_PREFIXES, CHINEXT_20PCT_FROM = ("SZ300", "SZ301"), pd.Timestamp("2020-08-24")
-STAR_PREFIX = "SH688"
 _PRICE_TOL = 1e-6  # relative tolerance for "the close equals the day's high / low" on adjusted prices
 
 
 # Price limits ---------------------------------------------------------------------------------------------
-def price_limit(codes: list[str], dates: pd.DatetimeIndex) -> np.ndarray:
-    """[T, N] daily price limit as a fraction: 20% for STAR, and for ChiNext from 2020-08-24; otherwise 10%."""
-    lim = np.full((len(dates), len(codes)), MAIN_LIMIT)
-    star = np.array([c.upper().startswith(STAR_PREFIX) for c in codes])
-    chinext = np.array([c.upper().startswith(CHINEXT_PREFIXES) for c in codes])
-    lim[:, star] = GROWTH_LIMIT
-    lim[np.ix_(np.asarray(dates >= CHINEXT_20PCT_FROM), chinext)] = GROWTH_LIMIT
+def price_limit(codes: list[str], dates: pd.DatetimeIndex, tc: TradingConfig) -> np.ndarray:
+    """[T, N] daily price limit as a fraction, from the config's steps (``trading.price_limits``).
+
+    Steps are applied in order: each sets its limit for the codes that start with one of its prefixes (every
+    code if it has none), from its first date on, overriding earlier steps. A (code, date) that no step covers
+    is an error. China's default: 10%; 20% for STAR (SH688); 20% for ChiNext (SZ300, SZ301) from 2020-08-24.
+    """
+    dates = pd.DatetimeIndex(dates)
+    upper = [str(c).upper() for c in codes]
+    lim = np.full((len(dates), len(codes)), np.nan)
+    for prefixes, first, limit in tc.price_limits:
+        cols = np.array([not prefixes or c.startswith(prefixes) for c in upper], dtype=bool)
+        lim[np.ix_(np.asarray(dates >= pd.Timestamp(first)), cols)] = limit
+    missing = np.isnan(lim)
+    if missing.any():
+        t, j = np.argwhere(missing)[0]
+        raise ValueError(
+            f"no price limit is defined for {int(missing.sum())} (stock, date) pairs, e.g. {codes[j]} on {dates[t].date()}: "
+            "add a step to trading.price_limits that covers them"
+        )
     return lim
 
 
@@ -63,11 +74,11 @@ class TradeFlags:
         return self.traded & ~self.limit_down
 
 
-def trade_flags(close: pd.DataFrame, high: pd.DataFrame, low: pd.DataFrame) -> TradeFlags:
+def trade_flags(close: pd.DataFrame, high: pd.DataFrame, low: pd.DataFrame, tc: TradingConfig) -> TradeFlags:
     """Limit and suspension flags from adjusted daily prices (wide frames, NaN = did not trade)."""
     ret = (close / prev_traded_close(close) - 1.0).to_numpy(dtype=np.float64)
     c, h, lo = (f.to_numpy(dtype=np.float64) for f in (close, high, low))
-    lim = price_limit(list(close.columns), close.index)
+    lim = price_limit(list(close.columns), close.index, tc)
     with np.errstate(invalid="ignore"):
         up = (ret >= lim - LIMIT_TOL) & (c >= h * (1 - _PRICE_TOL))
         down = (ret <= -(lim - LIMIT_TOL)) & (c <= lo * (1 + _PRICE_TOL))

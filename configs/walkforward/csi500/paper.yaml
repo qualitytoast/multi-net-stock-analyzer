@@ -1,0 +1,5 @@
+# The paper method on CSI500 (configs/csi500.yaml), evaluated walk-forward: the same 11 folds as CSI300
+# (test years 2013-2023, history from 2008, data loaded from 2007; see ../_layer.yaml).
+base: [../../csi500.yaml, ../_layer.yaml]
+run_dir: runs/csi500_wf  # ../_layer.yaml names CSI300's folder
+variant: wf_paper

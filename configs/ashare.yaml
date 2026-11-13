@@ -1,0 +1,34 @@
+# The paper method on the whole China A-share market (every listed stock, delisted ones kept), as an extra
+# check next to CSI300 (docs/RULES.md, "More data", Rules ND and CU). Same pinned archive, same splits.
+#
+# What differs from configs/csi300.yaml, all behind flags that are off there:
+# - universe `all`, with the 6 index series that Qlib keeps in that list taken out (they are not stocks);
+# - new listings: a stock enters only from its 121st traded day in the loaded data (120 = the longest
+#   feature window), so first-day and first-weeks IPO moves reach neither the universe nor the market state;
+# - suspensions: the existing universe rule (a stock must have traded the day before);
+# - price limits for blocked trades: China's rules plus 30% for Beijing Stock Exchange codes (BJ).
+# Known gap (Rule CU): the archive has no ST flags, so ST stocks (under a risk warning) stay in the universe
+# and their 5% price limit is not modelled.
+#
+# Not named "paper": it sets post-paper flags. Its own market name: separate try ledger
+# (results/ashare/trials.csv) and test lock (locks/ashare_test.json).
+base: csi300.yaml
+market: ashare
+run_dir: runs/ashare
+variant: paper_listed120
+
+data:
+  universe: all
+  index_symbol: SH000985  # the CSI All Share price index (plots only)
+  min_traded_days: 120
+  exclude_codes: [SH000300, SH000852, SH000905, SH000906, SH000985, SZ399300]  # index series in the `all` list
+
+trading:
+  price_limits:
+    - [[], "1990-01-01", 0.10]
+    - [["SH688"], "1990-01-01", 0.20]  # STAR board
+    - [["SZ300", "SZ301"], "2020-08-24", 0.20]  # ChiNext, from the registration reform
+    - [["BJ"], "1990-01-01", 0.30]  # Beijing Stock Exchange
+
+qa:
+  membership_checks: true  # Rule ND: per-year members, priced share and survivorship in the data report

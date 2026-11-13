@@ -5,6 +5,10 @@ Masks (plan A3):
                -> drives agent-output z-scoring, the scores, and the portfolio pool
   tradable_t = universe_t AND traded on t (can be bought at t's close)
   label_ok_t = universe_t AND the 20-day label exists -> used ONLY inside loss / IC / Shapley
+
+Membership filters (docs/RULES.md, Rule CU; both off unless the config sets them): ``data.exclude_codes`` and
+the new-listing filter ``data.min_traded_days`` are applied to the membership frame before anything reads it,
+so the universe mask and the market state see the same members.
 """
 
 from __future__ import annotations
@@ -89,6 +93,34 @@ def make_masks(close: pd.DataFrame, member: pd.DataFrame, horizon: int):
     return universe, tradable, label_ok, labels
 
 
+def without_codes(member: pd.DataFrame, codes: tuple[str, ...]) -> pd.DataFrame:
+    """Membership with the given codes never members (non-stock series in the universe list)."""
+    unknown = sorted(set(codes) - set(member.columns))
+    if unknown:
+        raise ValueError(f"data.exclude_codes lists codes that are not in the loaded universe: {unknown}")
+    out = member.copy()
+    out.loc[:, list(codes)] = False
+    return out
+
+
+def seasoned_members(member: pd.DataFrame, close: pd.DataFrame, min_traded_days: int) -> pd.DataFrame:
+    """New-listing filter (docs/RULES.md, Rule CU): member on t AND at least ``min_traded_days`` traded days up to
+    and including t-1 in the loaded data. With 120, a stock enters on its 121st traded day. Day t's own price is
+    never read, so membership on t is known before t."""
+    traded_before = close.notna().cumsum().shift(1, fill_value=0)  # traded days in the loaded data up to t-1
+    return member & (traded_before >= min_traded_days)
+
+
+def model_membership(raw: RawPanel, cfg: Config) -> pd.DataFrame:
+    """The membership frame that feeds both the universe mask and the market state."""
+    member = raw.member
+    if cfg.data.exclude_codes:
+        member = without_codes(member, cfg.data.exclude_codes)
+    if cfg.data.min_traded_days > 0:
+        member = seasoned_members(member, raw.fields["close"], cfg.data.min_traded_days)
+    return member
+
+
 @dataclass
 class PreparedData:
     raw: RawPanel
@@ -99,17 +131,19 @@ class PreparedData:
     panel: Panel
     masks: dict[str, pd.DataFrame]
     labels: pd.DataFrame
+    member: pd.DataFrame  # membership after the config's filters (raw.member itself when none is set)
 
 
 def build(cfg: Config, rebuild_raw: bool = False) -> PreparedData:
     raw = load_or_build_raw_panel(cfg, rebuild=rebuild_raw)
     close = raw.fields["close"]
-    universe, tradable, label_ok, labels = make_masks(close, raw.member, cfg.features.horizon)
+    member = model_membership(raw, cfg)
+    universe, tradable, label_ok, labels = make_masks(close, member, cfg.features.horizon)
     r_next = next_day_return(close)
 
     log.info("computing features")
     feats = compute_features(raw.fields, cfg.features.min_window_coverage)
-    state = market_state(close, raw.member, cfg.regimes.windows, cfg.features.min_window_coverage)
+    state = market_state(close, member, cfg.regimes.windows, cfg.features.min_window_coverage)
 
     cal = raw.calendar
     model_dates = cal[(cal >= pd.Timestamp(cfg.splits.train[0])) & (cal <= pd.Timestamp(cfg.splits.test[1]))]
@@ -180,7 +214,7 @@ def build(cfg: Config, rebuild_raw: bool = False) -> PreparedData:
         index_close=torch.from_numpy(raw.index_close.loc[model_dates].to_numpy(dtype=np.float32)),
     )
     masks = {"universe": universe, "tradable": tradable, "label_ok": label_ok}
-    return PreparedData(raw, feats, state, splits, regimes, panel, masks, labels)
+    return PreparedData(raw, feats, state, splits, regimes, panel, masks, labels, member)
 
 
 def artifacts_dir(cfg: Config) -> Path:
