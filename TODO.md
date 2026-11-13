@@ -64,7 +64,9 @@ checks next to CSI300; the keep rule and the second-market rule (the US) are unc
   (82 cases on member-days since 2007), and cash dividends. Both need corporate-action data from another source.
   Also, when the dataset is next rebuilt: end a membership span at the last row before a gap, so a code delisted and
   later re-listed under the same number (one case, KR000030, 24 member-days in 2002, before every configured load
-  window) does not stay a member through its dead period.
+  window) does not stay a member through its dead period. At that rebuild, also derive the conversion report's
+  survivorship counts (data ends early, stopped for good) and its factor-table stock set from rows dated before
+  2024-03-01 only, as the QA report does.
 - [ ] China membership dates: the archive shows index reviews 9 to 14 trading days late (membership audit, E21).
   Decide whether to correct the dates.
 - [ ] Qlib's Alpha158 features (158 instead of 34).

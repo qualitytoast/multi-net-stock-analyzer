@@ -703,9 +703,13 @@ def render_conversion_report(conv: Converted, info: dict) -> str:
         f"(sha256 `{info['dump_bin_sha256']}`); sha256 over the whole output tree: `{info['tree_sha256']}`.",
         f"- Calendar: {conv.calendar[0].date()} .. {conv.calendar[-1].date()} ({len(conv.calendar)} trading days). The conversion is "
         "mechanical and covers all dates.",
-        f"- **Every statistic below uses only dates before {CHECK_END.date()}** (last date checked: {last_checked.date()}), except one conversion "
-        "integrity count marked \"(all dates)\": the number of converted rows without a usable base price, a check that has to "
-        "cover every converted row.",
+        f"- **Every statistic below uses only dates before {CHECK_END.date()}** (last date checked: {last_checked.date()}), except where rows "
+        f"dated from {CHECK_END.date()} on are consulted: (1) one conversion integrity count marked \"(all dates)\", the number of converted "
+        "rows without a usable base price, a check that has to cover every converted row; (2) whether a stock's data \"ends early\" and "
+        "whether a member \"stopped for good\" are judged from the stock's last row over all source dates (checked for this build: no "
+        f"member has a gap that spans {CHECK_END.date()}, so both counts are the same as with rows before that date only); (3) the factor "
+        f"table covers the stocks picked on any selection date, {adj['Code'].nunique() - len(picked_before)} of them picked only on "
+        f"selection dates on or after {CHECK_END.date()}, using only their rows before {CHECK_END.date()}.",
         f"- Universe `{UNIVERSE_NAME}`; index series `{INDEX_SYMBOL}` (synthetic, {INDEX_BASE:g} on {uni.schedule[0].date.date()}); "
         f"stock symbols are `{CODE_PREFIX}` + the 6-character code.",
         "",

@@ -3,7 +3,7 @@
 - Source: FinanceData/marcap at commit `d3b703628e5a73112111d8bc43439f950762f67e` (manifest sha256 `12b24b74dd15cddadeb713606c9da6dba18a380f7f9deab225f6fb0f905ec802`).
 - Qlib files written with Qlib's own `scripts/dump_bin.py` at commit `b87a2c294d364a33fb739359886acffe8ec907d1` (sha256 `b8f34c57ce1ef4b1772f3909735e66058f21b25bd7ab8a5f16318822401fe53f`); sha256 over the whole output tree: `c63038a4596a5f2d989757103fbf58f82ec3e409683f49086a576ec27268d953`.
 - Calendar: 1995-05-02 .. 2026-11-11 (7942 trading days). The conversion is mechanical and covers all dates.
-- **Every statistic below uses only dates before 2024-03-01** (last date checked: 2024-02-29), except one conversion integrity count marked "(all dates)": the number of converted rows without a usable base price, a check that has to cover every converted row.
+- **Every statistic below uses only dates before 2024-03-01** (last date checked: 2024-02-29), except where rows dated from 2024-03-01 on are consulted: (1) one conversion integrity count marked "(all dates)", the number of converted rows without a usable base price, a check that has to cover every converted row; (2) whether a stock's data "ends early" and whether a member "stopped for good" are judged from the stock's last row over all source dates (checked for this build: no member has a gap that spans 2024-03-01, so both counts are the same as with rows before that date only); (3) the factor table covers the stocks picked on any selection date, 10 of them picked only on selection dates on or after 2024-03-01, using only their rows before 2024-03-01.
 - Universe `kr200`; index series `KRTOP200SYN` (synthetic, 1000 on 1995-11-30); stock symbols are `KR` + the 6-character code.
 
 ## Universe (Rule KU)
