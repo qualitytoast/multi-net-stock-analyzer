@@ -10,9 +10,12 @@
 # write the Qlib binary files.
 #
 # Usage:
-#   scripts/get_kr_data.sh                   fetch (if needed) and verify every yearly file against the manifest
-#   scripts/get_kr_data.sh --write-manifest  (maintainer, once per pin) write the manifest from the fetched files
-#   scripts/get_kr_data.sh --print-pins      print the pins, one KEY=value per line, and exit; fetches nothing
+#   scripts/get_kr_data.sh               fetch (if needed) and verify every yearly file against the manifest
+#   scripts/get_kr_data.sh --print-pins  print the pins, one KEY=value per line, and exit; fetches nothing
+#
+# After a deliberate pin change (owner's OK, entry under "Rule changes" in docs/RULES.md), the manifest is rewritten
+# from the fetched files with one command, run inside the checkout:
+#   shasum -a 256 data/marcap-*.parquet > <repo>/scripts/kr_data.sha256
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,13 +23,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # run as a separate process with -I) and DUMP_BIN_SHA256.
 source "$SCRIPT_DIR/kr_data.pins"
 
-if [[ "${1:-}" == "--print-pins" ]]; then
+if [[ $# -eq 1 && "$1" == "--print-pins" ]]; then
   for name in MARCAP_REPO MARCAP_COMMIT QLIB_COMMIT DUMP_BIN_SHA256; do
     printf '%s=%s\n' "$name" "${!name}"
   done
   exit 0
-elif [[ $# -gt 0 && "$1" != "--write-manifest" ]]; then
-  echo "unknown argument: $1 (the options are --write-manifest and --print-pins)" >&2
+elif [[ $# -gt 0 ]]; then
+  echo "unknown argument(s): $* (the only option is --print-pins)" >&2
   exit 2
 fi
 
@@ -73,13 +76,6 @@ if [[ ${#paths[@]} -eq 0 ]]; then
   exit 1
 fi
 files=("${paths[@]#"$DL_DIR"/}")  # relative names, e.g. data/marcap-1995.parquet
-
-if [[ "${1:-}" == "--write-manifest" ]]; then
-  for f in "${files[@]}"; do
-    printf '%s  %s\n' "$(sha "$DL_DIR/$f")" "$f"
-  done > "$MANIFEST"
-  echo "manifest written: $MANIFEST (${#files[@]} files)"
-fi
 
 if [[ ! -f "$MANIFEST" ]]; then
   echo "manifest missing: $MANIFEST" >&2

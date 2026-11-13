@@ -316,8 +316,9 @@ for byte, and the rebuilt CSI300 panels equal the saved ones in every field (no 
   - Tickers that left the index before 2024-03-01: 70.37% (398,121 of 565,716). Tickers still in it on 2024-02-29:
     98.62%.
   - Per year: 80.84% (2008) rising to 98.27% (2023); only 2020 onward clears 95%.
-  - Not part of the rule: 93.86% when the date range is ignored; 94.71% under the loosest reading (any Tiingo row
-    under the ticker), so the verdict does not hang on the details.
+  - Not part of the rule: 93.86% when the date range is ignored; 94.71% under the loosest reading of what counts as a
+    Tiingo stock row (any row under the ticker; an extra added after the first result, not part of the pre-written
+    rule), so the verdict does not hang on the details.
   - Unmatched member-days by likely reason: ticker not listed, mostly renamed companies kept only under their new
     ticker, 5.28% of all member-days; reused tickers 2.30%; date ranges covering only part of the membership 1.34%.
   - The 91.06% is if anything generous: a reused ticker whose dates happen to cover the day counts as matched.

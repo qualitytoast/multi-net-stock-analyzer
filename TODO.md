@@ -62,6 +62,9 @@ checks next to CSI300; the keep rule and the second-market rule (the US) are unc
   settled before the first model date, and add an ST filter (BaoStock has daily ST flags).
 - [ ] Korea: returns miss the move into a re-opening price after a capital reduction, spin-off, merger or long halt
   (82 cases on member-days since 2007), and cash dividends. Both need corporate-action data from another source.
+  Also, when the dataset is next rebuilt: end a membership span at the last row before a gap, so a code delisted and
+  later re-listed under the same number (one case, KR000030, 24 member-days in 2002, before every configured load
+  window) does not stay a member through its dead period.
 - [ ] China membership dates: the archive shows index reviews 9 to 14 trading days late (membership audit, E21).
   Decide whether to correct the dates.
 - [ ] Qlib's Alpha158 features (158 instead of 34).

@@ -129,9 +129,9 @@ data and no decision depends on it.
   all 206 month ends; 0.11% and 0.08% on the 187 month ends where BaoStock's own list is fresh.
 - **Limits.** BaoStock is a third-party source, not ground truth. It updates once a week at best and skipped
   updates between 2021-06 and 2023-03 (at 19 of 206 month ends its list was 10 to 211 days old). Because of that,
-  1,202 changes sit "between two BaoStock lists" with the archive ahead: 767 by at most 4 trading days (what an
-  on-time archive looks like next to a weekly list, mostly CSI300 reviews before mid-2013) and 435 inside
-  BaoStock's gaps. Those cannot be settled without the index provider's official effective dates.
+  1,202 changes sit "between two BaoStock lists" with the archive ahead: 767 by at most 4 trading days (363 CSI300
+  and 404 CSI500, almost all before mid-2013: what an on-time archive looks like next to a weekly list) and 435
+  inside BaoStock's gaps. Those cannot be settled without the index provider's official effective dates.
 - The BaoStock answers are cached outside the repo (838 files, each in a hash list, sha256 `20fcbe28...`; the two
   download logs, which feed only the download times, client and retry counts in the report's section 5, are not in
   the list), and `scripts/audit_membership.py --offline` rebuilds the report from the cache byte for byte.
@@ -182,6 +182,9 @@ Reports: [go/no-go](../results/kr200/go_no_go.md), [conversion](../results/kr200
     Shipbuilding re-opened on 2017-10-30 at half its pre-halt price; the true one-day move was -56.7%, the adjusted
     data shows -13.4%. There are 82 factor steps of this kind on member-days from 2007 on (1 to 10 a year; the
     count also includes plain splits). Fixing it needs corporate-action ratios from another source.
+  - A code that is delisted and later re-listed under the same number stays a member through its dead period, since
+    a span ends at the code's last row anywhere in the source. One case, KR000030: 24 member-days without a source row
+    (2002-04-29 to 2002-05-31), before every configured load window. To be fixed when the dataset is next rebuilt.
   - On 804 rows of picked stocks between 1998-01-09 and 2000-01-25 the source has no usable base price (mostly
     failed banks under a halt); the factor is carried over there. None is later than 2000, so no config (all load
     from 2007 or later) contains one.
@@ -205,8 +208,11 @@ the fja05680 member list against Tiingo's public list of supported tickers, on t
 weekday from 2008-01-01 to 2024-02-29. It fetched no prices. The pass bar, written beforehand, was 95.0% of
 member-days.
 
-- **Result: 91.06% matched (1,926,082 of 2,115,048 member-days). Failed.** Even the loosest reading (any Tiingo row
-  under the ticker, dates ignored) gives 94.71%, still under the bar.
+- **Result: 91.06% matched (1,926,082 of 2,115,048 member-days). Failed.** Even the loosest reading of what counts as a
+  Tiingo stock row (any row under the ticker, dates ignored; an extra added after the first result, not part of the
+  pre-written rule) gives 94.71%, still under the bar. That reading is not loose over ticker identity: the report tags
+  156,198 unmatched member-days (7.38%) as possible renames, and Tiingo holds some of that history under successor
+  tickers, so a rename map could recover part of it.
 - **The gap is survivorship.** Tickers that left the index before 2024-03-01 are matched on 70.37% of their
   member-days; tickers still in the index on 2024-02-29 on 98.62%. By year the share climbs from 80.84% (2008) to
   98.27% (2023); only 2020 onward clears 95% in a single year.

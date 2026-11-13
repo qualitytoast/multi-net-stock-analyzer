@@ -3,7 +3,7 @@
 - Source: FinanceData/marcap at commit `d3b703628e5a73112111d8bc43439f950762f67e` (manifest sha256 `12b24b74dd15cddadeb713606c9da6dba18a380f7f9deab225f6fb0f905ec802`).
 - Qlib files written with Qlib's own `scripts/dump_bin.py` at commit `b87a2c294d364a33fb739359886acffe8ec907d1` (sha256 `b8f34c57ce1ef4b1772f3909735e66058f21b25bd7ab8a5f16318822401fe53f`); sha256 over the whole output tree: `c63038a4596a5f2d989757103fbf58f82ec3e409683f49086a576ec27268d953`.
 - Calendar: 1995-05-02 .. 2026-11-11 (7942 trading days). The conversion is mechanical and covers all dates.
-- **Every statistic below uses only dates before 2024-03-01** (last date checked: 2024-02-29).
+- **Every statistic below uses only dates before 2024-03-01** (last date checked: 2024-02-29), except one conversion integrity count marked "(all dates)": the number of converted rows without a usable base price, a check that has to cover every converted row.
 - Universe `kr200`; index series `KRTOP200SYN` (synthetic, 1000 on 1995-11-30); stock symbols are `KR` + the 6-character code.
 
 ## Universe (Rule KU)
@@ -123,4 +123,8 @@ The 10 largest and 10 smallest steps:
   long halt, the exchange sets that day's base price at the opening price. The move from the last close to that
   opening price is then part of the factor step, so it is missing from returns (example: KR042660 re-opened on
   2017-10-30 at half its pre-halt price, a step of 2).
+- A code that is delisted and later re-listed under the same number stays a member through its dead period: a
+  span ends at the code's last row anywhere in the source, not at its last row before the gap. One case, KR000030
+  (24 member-days without a source row, 2002-04-29 to 2002-05-31), before every configured load window. To be
+  fixed when the dataset is next rebuilt (end the span at the last row before the gap).
 - The index series is synthetic (the members' market-cap-weighted return), not the official KOSPI 200.

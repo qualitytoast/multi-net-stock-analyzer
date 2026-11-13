@@ -595,8 +595,9 @@ One row per BaoStock change day, archive day and outcome; "Stocks" names up to f
   before the next usable month end is therefore seen only if a halving step happened to fall between the move
   and its reversal, even when that stretch had other changes. The "undone" count in section 2 is a lower
   bound, and a stock that moved more than once is dated by the last move the search saw, so its lag can come
-  out too large by the unseen moves. Where a month end was unusable the search spans two months, so such a
-  move can also be undone in the following month; its archive side then appears under "The other direction".
+  out too large or too small by the unseen moves (a spurious early case included). Where a month end was
+  unusable the search spans two months, so such a move can also be undone in the following month; its archive
+  side then appears under "The other direction".
 - **"In the archive from its first day" is given only within 250 trading days of that day.** A BaoStock add
   of a stock that the archive has listed without a break since its own first day, found later than that, is
   labelled never shown, although the archive's own add day is simply unknown.

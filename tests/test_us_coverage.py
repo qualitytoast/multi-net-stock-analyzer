@@ -298,6 +298,29 @@ def test_the_command_line_refuses_files_that_are_not_the_pinned_ones(tmp_path, c
     assert r.verdict and uc.totals(r.coverage) == (4218, 4218, 4218, 4218) and (out / uc.REPORT_FILE).exists()
 
 
+def test_an_unreadable_tiingo_zip_is_a_reported_error_not_a_traceback(tmp_path):
+    members = tmp_path / "members.csv"
+    members.write_text('date,tickers\n2007-12-31,"A"\n')
+    wrong_name = tmp_path / "wrong_name.zip"
+    with zipfile.ZipFile(wrong_name, "w") as z:
+        z.writestr("supported-tickers.csv", HEADER)
+    corrupt = tmp_path / "corrupt.zip"
+    corrupt.write_bytes(b"not a zip file")
+    for path in (wrong_name, corrupt):
+        with pytest.raises(CoverageError, match=re.escape(path.name)):
+            uc.run_check(members, path, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
+
+
+def test_the_fetch_script_rejects_an_unknown_or_extra_argument_before_fetching_anything(tmp_path):
+    env = {**os.environ, "SP500_DIR": str(tmp_path / "sp500"), "TIINGO_ROOT": str(tmp_path / "tiingo")}
+    for args in (["--new-pin"], ["--print-pins", "junk"]):
+        done = subprocess.run([str(ROOT / "scripts/get_us_coverage_data.sh"), *args], capture_output=True, text=True, env=env)
+        assert done.returncode == 2 and done.stdout == ""
+        assert done.stderr.strip() == f"unknown argument(s): {' '.join(args)} (the only option is --print-pins)"
+    assert not any(tmp_path.iterdir())
+
+
 def test_the_fetch_script_and_the_check_use_the_same_pins(tmp_path):
     """``--print-pins`` is the script's no-network mode: it prints the pins it sourced, which must be the ones this
     module read from scripts/us_coverage_data.pins. Nothing is fetched or written."""

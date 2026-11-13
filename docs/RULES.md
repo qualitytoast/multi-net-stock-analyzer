@@ -451,8 +451,9 @@ Details (appended by the US check before the match is first computed):
   its walk-forward data was stopped at 24.5 GiB of memory on a 24 GB machine, so it is not prepared.
 - Rule KG: **go**, all three checks passed. The Korea dataset is built (Rule KU: 57 selection dates before
   2024-03-01, 200 picks each).
-- Rule UC: **failed**, 91.06% of member-days matched against the 95.0% bar (94.71% under the loosest reading). The
-  free S&P 500 route is not good enough as it stands; no Tiingo fetch was started.
+- Rule UC: **failed**, 91.06% of member-days matched against the 95.0% bar (94.71% under the loosest reading of what
+  counts as a Tiingo stock row, an extra added after the first result, not part of the pre-written rule). The free
+  S&P 500 route is not good enough as it stands; no Tiingo fetch was started.
 - Rule MA: report written. No paired change is clearly early in the archive (0 of 4,950); one archive add with no
   BaoStock partner (CSI500, SZ302132, 2023-12-29, the phantom member with no price before the test period) is ahead
   of every later BaoStock list. Reviews since 2013-12 appear 9 to 14 trading days late.

@@ -544,8 +544,11 @@ def verify_pins(membership: Path, tiingo_zip: Path) -> None:
 def run_check(membership: Path, tiingo_zip: Path, out_dir: Path) -> Result:
     with membership.open(newline="", encoding="utf-8") as f:
         rows = read_membership(f)
-    with zipfile.ZipFile(tiingo_zip) as z, z.open(TIINGO_CSV_NAME) as raw:
-        listings = read_tiingo(io.TextIOWrapper(raw, encoding="utf-8", newline=""))
+    try:
+        with zipfile.ZipFile(tiingo_zip) as z, z.open(TIINGO_CSV_NAME) as raw:
+            listings = read_tiingo(io.TextIOWrapper(raw, encoding="utf-8", newline=""))
+    except (zipfile.BadZipFile, KeyError) as e:
+        raise CoverageError(f"{tiingo_zip} is not a zip file holding {TIINGO_CSV_NAME}: {e}") from e
     result = check(rows, listings)
     write_outputs(result, out_dir)
     return result

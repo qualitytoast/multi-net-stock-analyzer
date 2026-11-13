@@ -71,8 +71,9 @@ Korean stock (its go/no-go checks, written beforehand, passed: delisted stocks a
 out right, suspensions are identified). They are extra checks next to CSI300; the keep rule is unchanged. The free
 S&P 500 route failed its check: only 91.06% of member-days (one stock on one day it was in the index) can be matched
 to a listed ticker, against a bar of 95.0%, and only 70.37% for stocks that later left the index. A membership audit
-of the China archive's index lists found no paired index change shown early (0 of 4,950); the one unpaired case is a
-phantom member with no prices that never enters the universe. The lists show index reviews 9 to 14 trading days late.
+of the China archive's index lists found no paired index change shown early (0 of 4,950); of the 3 archive changes
+with no BaoStock partner, 1 (SZ302132) is ahead of BaoStock, a phantom member with no prices that never enters the
+universe. The lists show index reviews 9 to 14 trading days late.
 Known gaps: the whole-market walk-forward data does not fit in memory yet and has no ST filter; the Korea data has no
 cash dividends and misses re-opening moves after capital reductions and long halts. Details:
 [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md), EXPERIMENTS E20-E23.
@@ -134,7 +135,7 @@ try numbers from [results/csi300/trials.csv](results/csi300/trials.csv), validat
 # Python 3.12 is required (pyqlib 0.9.7 has no 3.13 wheels); uv installs it for you.
 uv sync
 ./scripts/get_cn_data.sh        # pinned community Qlib CN dataset, verified by sha256 (about 570 MB)
-uv run pytest                   # 417 tests; data-dependent ones skip until `prepare` has run
+uv run pytest                   # 420 tests; data-dependent ones skip until `prepare` has run
 
 # Optional, South Korea: pinned source (about 1 GB), then the go/no-go checks and the conversion it prints
 ./scripts/get_kr_data.sh

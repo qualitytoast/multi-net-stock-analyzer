@@ -357,12 +357,23 @@ def test_the_download_script_and_the_converter_use_the_same_pins(tmp_path):
     assert re.fullmatch(r"[0-9a-f]{64}", kr.DUMP_BIN_SHA256)
 
 
-def test_the_download_script_rejects_an_unknown_argument_before_fetching_anything(tmp_path):
+def test_the_download_script_rejects_an_unknown_or_extra_argument_before_fetching_anything(tmp_path):
     env = {**os.environ, "DL_DIR": str(tmp_path / "dl"), "TOOLS_DIR": str(tmp_path / "tools")}
-    done = subprocess.run([str(ROOT / "scripts/get_kr_data.sh"), "--print-pin"], capture_output=True, text=True, env=env)
-    assert done.returncode == 2 and done.stdout == ""
-    assert done.stderr.strip() == "unknown argument: --print-pin (the options are --write-manifest and --print-pins)"
+    for args in (["--print-pin"], ["--write-manifest"], ["--print-pins", "junk"]):
+        done = subprocess.run([str(ROOT / "scripts/get_kr_data.sh"), *args], capture_output=True, text=True, env=env)
+        assert done.returncode == 2 and done.stdout == ""
+        assert done.stderr.strip() == f"unknown argument(s): {' '.join(args)} (the only option is --print-pins)"
     assert not any(tmp_path.iterdir())
+
+
+def test_a_malformed_manifest_line_is_a_reported_error_not_a_traceback(tmp_path, capsys):
+    manifest = tmp_path / "kr_data.sha256"
+    manifest.write_text("0123abcd  data/marcap-1995.parquet\n0123abcd\n")
+    with pytest.raises(kr.KrError, match=r"kr_data\.sha256:2: expected"):
+        kr.read_manifest(manifest)
+    out = tmp_path / "go_no_go.md"
+    assert kr.main(["go-no-go", "--source", str(tmp_path), "--manifest", str(manifest), "--out", str(out)]) == 2
+    assert capsys.readouterr().err.startswith("error: ") and not out.exists()
 
 
 def test_kr200_config_names_the_pinned_data():

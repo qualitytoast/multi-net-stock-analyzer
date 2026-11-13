@@ -6,11 +6,8 @@
 # Nothing is stored in the repo. Safe to re-run: it skips work that is already done and re-verifies the hashes.
 #
 # Usage:
-#   scripts/get_us_coverage_data.sh            fetch what is missing, then verify both pins
-#   scripts/get_us_coverage_data.sh --new-pin  download today's Tiingo file into a new dated directory and print
-#                                              the values to record. It changes no pin: see "If the Tiingo hash
-#                                              differs" below before using it.
-#   scripts/get_us_coverage_data.sh --print-pins print the pins, one KEY=value per line, and exit; fetches nothing
+#   scripts/get_us_coverage_data.sh               fetch what is missing, then verify both pins
+#   scripts/get_us_coverage_data.sh --print-pins  print the pins, one KEY=value per line, and exit; fetches nothing
 #
 # If the Tiingo hash differs
 #   Tiingo replaces this file every day, so a fresh download almost never has the pinned hash. This script
@@ -22,10 +19,12 @@
 #   - no local copy exists and the download has another hash: the pinned file is gone from Tiingo's server.
 #     Restore it from a backup, or make a new pin.
 #   - a new pin is a new input, so the coverage numbers change and the old result is no longer reproducible.
-#     Ask the owner first. Then: run this script with --new-pin, copy the printed time and hash into
-#     TIINGO_DOWNLOADED_AT and TIINGO_ZIP_SHA256 in scripts/us_coverage_data.pins (the only place they are written;
-#     the check reads the same file), log the change and its reason under "Rule changes" in docs/RULES.md (the
-#     Details under Rule UC name the old hash), and re-run the check.
+#     Ask the owner first. Then download today's file into a new dated directory, from the repo root:
+#       source scripts/us_coverage_data.pins; d=~/data/tiingo/supported_tickers_$(date -u +%F); mkdir -p "$d"
+#       date -u +%FT%TZ; curl -fL -o "$d/supported_tickers.zip" "$TIINGO_URL"; shasum -a 256 "$d/supported_tickers.zip"
+#     Copy the printed time and hash into TIINGO_DOWNLOADED_AT and TIINGO_ZIP_SHA256 in scripts/us_coverage_data.pins
+#     (the only place they are written; the check reads the same file), log the change and its reason under "Rule
+#     changes" in docs/RULES.md (the Details under Rule UC name the old hash), and re-run the check.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,11 +32,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/us_coverage_data.pins"
 TIINGO_DATE="${TIINGO_DOWNLOADED_AT:0:10}"
 
-if [[ "${1:-}" == "--print-pins" ]]; then
+if [[ $# -eq 1 && "$1" == "--print-pins" ]]; then
   for name in SP500_REPO SP500_COMMIT SP500_FILE SP500_FILE_SHA256 TIINGO_URL TIINGO_DOWNLOADED_AT TIINGO_ZIP_SHA256; do
     printf '%s=%s\n' "$name" "${!name}"
   done
   exit 0
+elif [[ $# -gt 0 ]]; then
+  echo "unknown argument(s): $* (the only option is --print-pins)" >&2
+  exit 2
 fi
 
 SP500_DIR="${SP500_DIR:-$HOME/data/fja05680_sp500/$SP500_COMMIT}"
@@ -75,26 +77,6 @@ fetch_sp500() {
   fi
   echo "fja05680/sp500 commit OK: $SP500_COMMIT"
 }
-
-if [[ "${1:-}" == "--new-pin" ]]; then
-  fetch_sp500
-  echo "csv files at the pinned commit (sha256, name):"
-  find "$SP500_DIR" -maxdepth 1 -name '*.csv' -exec shasum -a 256 {} \;
-  NEW_DIR="$TIINGO_ROOT/supported_tickers_$(date -u +%Y-%m-%d)"
-  if [[ -e "$NEW_DIR/supported_tickers.zip" ]]; then
-    echo "a Tiingo download already exists for today (UTC): $NEW_DIR; not replacing it" >&2
-    exit 1
-  fi
-  mkdir -p "$NEW_DIR"
-  download_tiingo "$NEW_DIR/supported_tickers.zip"
-  echo "new Tiingo download (not pinned until recorded in scripts/us_coverage_data.pins):"
-  echo "  directory: $NEW_DIR"
-  sed 's/^/  /' "$NEW_DIR/supported_tickers.zip.info"
-  exit 0
-elif [[ $# -gt 0 ]]; then
-  echo "unknown argument: $1 (the options are --new-pin and --print-pins)" >&2
-  exit 2
-fi
 
 fetch_sp500
 if [[ ! -f "$SP500_DIR/$SP500_FILE" || "$(sha "$SP500_DIR/$SP500_FILE")" != "$SP500_FILE_SHA256" ]]; then

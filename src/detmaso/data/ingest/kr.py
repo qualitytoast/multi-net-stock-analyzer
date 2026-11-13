@@ -132,9 +132,12 @@ def yearly_files(source: Path) -> list[Path]:
 def read_manifest(manifest: Path) -> dict[str, str]:
     """``shasum -a 256`` output: {relative file name: sha256}."""
     out = {}
-    for line in manifest.read_text().splitlines():
+    for number, line in enumerate(manifest.read_text().splitlines(), start=1):
         if line.strip():
-            digest, name = line.split(maxsplit=1)
+            parts = line.split(maxsplit=1)
+            if len(parts) != 2:
+                raise KrError(f"{manifest}:{number}: expected '<sha256>  <file>', got {line!r}")
+            digest, name = parts
             out[name.strip().lstrip("*")] = digest
     if not out:
         raise KrError(f"empty manifest: {manifest}")
@@ -700,7 +703,9 @@ def render_conversion_report(conv: Converted, info: dict) -> str:
         f"(sha256 `{info['dump_bin_sha256']}`); sha256 over the whole output tree: `{info['tree_sha256']}`.",
         f"- Calendar: {conv.calendar[0].date()} .. {conv.calendar[-1].date()} ({len(conv.calendar)} trading days). The conversion is "
         "mechanical and covers all dates.",
-        f"- **Every statistic below uses only dates before {CHECK_END.date()}** (last date checked: {last_checked.date()}).",
+        f"- **Every statistic below uses only dates before {CHECK_END.date()}** (last date checked: {last_checked.date()}), except one conversion "
+        "integrity count marked \"(all dates)\": the number of converted rows without a usable base price, a check that has to "
+        "cover every converted row.",
         f"- Universe `{UNIVERSE_NAME}`; index series `{INDEX_SYMBOL}` (synthetic, {INDEX_BASE:g} on {uni.schedule[0].date.date()}); "
         f"stock symbols are `{CODE_PREFIX}` + the 6-character code.",
         "",
@@ -749,6 +754,10 @@ def render_conversion_report(conv: Converted, info: dict) -> str:
         "  long halt, the exchange sets that day's base price at the opening price. The move from the last close to that",
         "  opening price is then part of the factor step, so it is missing from returns (example: KR042660 re-opened on",
         "  2017-10-30 at half its pre-halt price, a step of 2).",
+        "- A code that is delisted and later re-listed under the same number stays a member through its dead period: a",
+        "  span ends at the code's last row anywhere in the source, not at its last row before the gap. One case, KR000030",
+        "  (24 member-days without a source row, 2002-04-29 to 2002-05-31), before every configured load window. To be",
+        "  fixed when the dataset is next rebuilt (end the span at the last row before the gap).",
         "- The index series is synthetic (the members' market-cap-weighted return), not the official KOSPI 200.",
     ]
     return "\n".join(lines) + "\n"
