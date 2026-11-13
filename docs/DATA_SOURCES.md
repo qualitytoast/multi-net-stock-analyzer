@@ -120,7 +120,7 @@ data and no decision depends on it.
 - **The archive is late.** For the 17 twice-yearly reviews from 2013-12 to 2023-12 it shows the change 9 to 14
   trading days after BaoStock (median 13 for CSI300, 12 for CSI500): on the last trading day of June and December
   instead of the day after the second Friday. A single stock that moves between reviews waits for the archive's
-  next change day (longest 102 trading days for CSI300, 114 for CSI500).
+  next change day (longest 102 trading days for CSI300, 98 for CSI500).
 - **The archive's list changes only about twice a year,** on 41 days (CSI300) and 40 days (CSI500) in 17 years, not
   monthly.
 - **Out-of-date share, 2012-01 on:** stocks BaoStock had already dropped but the archive still listed make up 0.55%

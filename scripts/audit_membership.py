@@ -706,14 +706,18 @@ def archive_gap(result: dict, cal: Calendar) -> dict:
 # The report ------------------------------------------------------------------------------------------------------
 def unpaired_facts(result: dict) -> list[dict]:
     """For each archive change that BaoStock never pairs: what BaoStock's lists dated on or after the archive's
-    day (among those this audit asked for) say about that stock. "ahead" means every such list still shows the
-    old state, so the archive shows the change before BaoStock does, the pattern of a clearly early change."""
+    day (among those this audit asked for) say about that stock. A list is one update date, however many answers
+    carry it. "ahead" means every such list still shows the old state, so the archive shows the change before
+    BaoStock does, the pattern of a clearly early change."""
     index = result["index"]
     facts = []
     for day, kind, code in result["archive_only"]:
-        later = [a for a in result["answers"] if usable(a, index) and a.update_date is not None and a.update_date >= day]
-        holds = sum(code in a.codes for a in later)
-        dated = sorted(a.update_date for a in later)
+        later: dict[str, bool] = {}
+        for a in result["answers"]:
+            if usable(a, index) and a.update_date is not None and a.update_date >= day:
+                later[a.update_date] = later.get(a.update_date, False) or code in a.codes
+        holds = sum(later.values())
+        dated = sorted(later)
         facts.append({
             "date": day, "kind": kind, "code": code, "lists": len(later), "holds": holds,
             "dated": (dated[0], dated[-1]) if dated else None,
@@ -1280,10 +1284,11 @@ def render(results: list[dict], cal: Calendar, ends: list[str], cache: dict) -> 
     say("belong to a BaoStock change from before the audit window.")
     say("")
     if any(unpaired.values()):
-        say("What BaoStock's lists dated on or after the archive's day (among those this audit asked for) say about each:")
+        say("What BaoStock's lists dated on or after the archive's day (among those this audit asked for; a list is one")
+        say("update date) say about each:")
         say("")
         say(md_table(
-            ["Index", "Archive day", "Change", "Stock", "Later BaoStock lists", "Of which hold the stock", "Archive ahead of all of them"],
+            ["Index", "Archive day", "Change", "Stock", "Later BaoStock lists (distinct update dates)", "Of which hold the stock", "Archive ahead of all of them"],
             [[r["index"].name, f["date"], f["kind"], f["code"], f"{f['lists']} ({f['dated'][0]} to {f['dated'][1]})" if f["dated"] else "0",
               f["holds"], "yes" if f["ahead"] else "no"] for r in results for f in unpaired[r["index"].key]],
         ))  # fmt: skip

@@ -447,13 +447,15 @@ def test_main_rebuilds_the_same_report_offline_and_stays_out_of_the_locked_perio
 
 def test_unpaired_facts_tell_an_archive_ahead_change_from_one_baostock_made_earlier():
     """By the report's own definition: the archive is ahead when every BaoStock list dated on or after its day still
-    shows the old state (an add it lacks, a drop it still holds). Lists dated before that day and unusable ones
-    say nothing."""
+    shows the old state (an add it lacks, a drop it still holds). A list is one update date, so three answers that
+    carry the same stored list count once. Lists dated before that day and unusable ones say nothing."""
     def answer(date, update, *numbers):
         return am.Answer(date, len(numbers), codes(*numbers), (update,))
 
     answers = [
         answer("2021-01-29", "2021-01-25", 1, 2, 3, 4),
+        answer("2021-02-24", "2021-02-22", 1, 2, 3, 4),  # the same list as the next two answers: one list
+        answer("2021-02-25", "2021-02-22", 1, 2, 3, 4),
         answer("2021-02-26", "2021-02-22", 1, 2, 3, 4),
         answer("2021-03-31", "2021-03-29", 1, 2, 3, 4),
         answer("2021-04-30", "2021-04-26", 1, 2),  # obviously wrong size: unusable, never counted

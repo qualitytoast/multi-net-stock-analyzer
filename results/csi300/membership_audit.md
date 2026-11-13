@@ -402,12 +402,13 @@ stocks). One can also be the archive's side of a BaoStock move that was undone a
 month end (section 2), which this audit does not count as a change. One shortly after 2007-01-31 can also
 belong to a BaoStock change from before the audit window.
 
-What BaoStock's lists dated on or after the archive's day (among those this audit asked for) say about each:
+What BaoStock's lists dated on or after the archive's day (among those this audit asked for; a list is one
+update date) say about each:
 
-| Index | Archive day | Change | Stock | Later BaoStock lists | Of which hold the stock | Archive ahead of all of them |
+| Index | Archive day | Change | Stock | Later BaoStock lists (distinct update dates) | Of which hold the stock | Archive ahead of all of them |
 |---|---|---|---|---|---|---|
-| CSI300 | 2007-02-26 | add | SH601628 | 413 (2007-02-26 to 2024-02-26) | 413 | no |
-| CSI300 | 2007-02-26 | drop | SH600894 | 413 (2007-02-26 to 2024-02-26) | 0 | no |
+| CSI300 | 2007-02-26 | add | SH601628 | 292 (2007-02-26 to 2024-02-26) | 292 | no |
+| CSI300 | 2007-02-26 | drop | SH600894 | 292 (2007-02-26 to 2024-02-26) | 0 | no |
 | CSI500 | 2023-12-29 | add | SZ302132 | 2 (2024-01-29 to 2024-02-26) | 0 | yes |
 
 Reading: an add that none of the later lists holds, or a drop that all of them still hold, is a change the
