@@ -125,7 +125,7 @@ data and no decision depends on it.
 - **Month-end mismatch** (stocks in exactly one list / stocks in either): 0.42% for CSI300 and 0.56% for CSI500 over
   all 206 month ends; 0.11% and 0.08% on the 187 month ends where BaoStock's own list is fresh.
 - **Limits.** BaoStock is a third-party source, not ground truth. It updates once a week at best and skipped
-  updates between 2021-06 and 2023-03 (at 19 of 206 month ends its list was 16 to 228 days old). Because of that,
+  updates between 2021-06 and 2023-03 (at 19 of 206 month ends its list was 10 to 211 days old). Because of that,
   1,202 changes sit "between two BaoStock lists" with the archive ahead: 767 by at most 4 trading days (what an
   on-time archive looks like next to a weekly list, mostly CSI300 reviews before mid-2013) and 435 inside
   BaoStock's gaps. Those cannot be settled without the index provider's official effective dates.
