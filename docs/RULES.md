@@ -453,8 +453,9 @@ Details (appended by the US check before the match is first computed):
   2024-03-01, 200 picks each).
 - Rule UC: **failed**, 91.06% of member-days matched against the 95.0% bar (94.71% under the loosest reading). The
   free S&P 500 route is not good enough as it stands; no Tiingo fetch was started.
-- Rule MA: report written. No clear case of the archive showing an index change early; reviews since 2013-12 appear
-  9 to 14 trading days late.
+- Rule MA: report written. No paired change is clearly early in the archive (0 of 4,950); one archive add with no
+  BaoStock partner (CSI500, SZ302132, 2023-12-29, the phantom member with no price before the test period) is ahead
+  of every later BaoStock list. Reviews since 2013-12 appear 9 to 14 trading days late.
 - Two points were not covered by the rules as written and are logged under "Rule changes"; the owner approved both on 2026-11-12.
 
 ## Grids set by Rule G

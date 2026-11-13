@@ -11,7 +11,7 @@ locked test period. No model was trained, so this adds no tries.
 - **CSI300, delay:** the archive shows an index change a median of 9 trading days after BaoStock (90th percentile 14, longest 102), over the 1330 changes that BaoStock dates to the week. From 2012-01 on, the dates the model uses: median 12, 90th percentile 14, longest 89 (899 changes). Over all 1522 paired changes, including those where BaoStock skipped updates: median 9, 90th percentile 14, longest 102. The archive never shows 2 of BaoStock's 1524 changes (0.1%).
 - **CSI500, delay:** the archive shows an index change a median of 13 trading days after BaoStock (90th percentile 21, longest 98), over the 3025 changes that BaoStock dates to the week. From 2012-01 on, the dates the model uses: median 13, 90th percentile 18, longest 92 (2116 changes). Over all 3428 paired changes, including those where BaoStock skipped updates: median 12, 90th percentile 18, longest 114. The archive never shows 6 of BaoStock's 3434 changes (0.2%).
 - **Where the delay comes from** (section 4): at the 17 twice-yearly reviews since 2013-12-16 that BaoStock dates to the week, the archive is 9 to 14 trading days late. Single stocks that move between reviews wait for the archive's next change day; the longest waits, in trading days: 102 (CSI300), 98 (CSI500).
-- **Look-ahead check: in none of the 4950 paired changes does the archive show the change clearly EARLIER than BaoStock** (on or before the date of a BaoStock list that still lacked it).
+- **Look-ahead check: in none of the 4950 paired changes does the archive show the change clearly EARLIER than BaoStock** (on or before the date of a BaoStock list that still lacked it). Archive changes with no BaoStock change to pair with are outside this count (section 3, "The other direction"): 1 of 3 shows the archive ahead of every later BaoStock list: CSI500 SZ302132, added 2023-12-29, missing from the 2 BaoStock lists dated 2024-01-29 to 2024-02-26.
 - Another 1202 changes (24.3%) show up in the archive before BaoStock's new list but after BaoStock's last old one. BaoStock had no list in between, so these say nothing either way about look-ahead. For 767 of them the two BaoStock lists are a week apart and the archive is at most 4 trading days ahead, which is what an archive that is exactly on time looks like next to a weekly list; the other 435 fall where BaoStock skipped updates (section 3).
 - BaoStock is an unofficial source, not ground truth, and it was itself out of date at 38 of the 412 month-end lists compared. See "Limits".
 
@@ -190,8 +190,9 @@ with the old list and on or before the first trading day with the new one (it ca
   case, so it proved reliable, but the change day does not depend on it. The update date is used for two
   things: the date of BaoStock's last old list, which separates the two kinds of "early", and the age of
   a list, which shows where BaoStock itself was out of date.
-- Stock moves that BaoStock undid again within the same month (not counted as changes): CSI300 0, CSI500 0. Changes
-  whose BaoStock day could not be pinned to one trading day because of unusable answers: 0.
+- Stock moves that BaoStock undid again before the next usable month end, as far as the search saw them (not
+  counted as changes; a lower bound, see "Limits"): CSI300 0, CSI500 0. Changes whose BaoStock day could not be pinned
+  to one trading day because of unusable answers: 0.
 
 Month ends at which BaoStock's list was more than 6 days old:
 
@@ -397,7 +398,23 @@ week; "Early" counts both kinds over all changes, with the clear ones in bracket
 
 These are stock moves in the archive with no BaoStock change of the same stock and direction within 250
 trading days. Some are the other half of a "never shown" case above (the two sources swapped different
-stocks). One shortly after 2007-01-31 can also belong to a BaoStock change from before the audit window.
+stocks). One can also be the archive's side of a BaoStock move that was undone again before the next usable
+month end (section 2), which this audit does not count as a change. One shortly after 2007-01-31 can also
+belong to a BaoStock change from before the audit window.
+
+What BaoStock's lists dated on or after the archive's day (among those this audit asked for) say about each:
+
+| Index | Archive day | Change | Stock | Later BaoStock lists | Of which hold the stock | Archive ahead of all of them |
+|---|---|---|---|---|---|---|
+| CSI300 | 2007-02-26 | add | SH601628 | 413 (2007-02-26 to 2024-02-26) | 413 | no |
+| CSI300 | 2007-02-26 | drop | SH600894 | 413 (2007-02-26 to 2024-02-26) | 0 | no |
+| CSI500 | 2023-12-29 | add | SZ302132 | 2 (2024-01-29 to 2024-02-26) | 0 | yes |
+
+Reading: an add that none of the later lists holds, or a drop that all of them still hold, is a change the
+archive shows before BaoStock does, the pattern of a clearly early change above. These have no BaoStock
+change to pair with, so they are not in the look-ahead count; "In short" and section 4 name them instead.
+Later lists that agree with the archive mean BaoStock shows the same state and made the move before the
+audit window or more than 250 trading days away.
 
 ### Every day on which BaoStock's list changes
 
@@ -531,7 +548,8 @@ One row per BaoStock change day, archive day and outcome; "Stocks" names up to f
   information from the future, so it cannot inflate a backtest the way look-ahead does.
 - **How much of the CSI300 universe is out of date, 2012-01 on.** Stocks that BaoStock had already dropped but the archive still listed add up to 4898 stock-days, 0.55% of the archive's 885600 member-days (one stock on one trading day). About as many stock-days are missing on the other side (stocks that had joined). Where BaoStock skipped updates the delay cannot be measured and counts as zero here, so the true share is somewhat higher.
 - **How much of the CSI500 universe is out of date, 2012-01 on.** Stocks that BaoStock had already dropped but the archive still listed add up to 14799 stock-days, 1.00% of the archive's 1476038 member-days (one stock on one trading day). About as many stock-days are missing on the other side (stocks that had joined). Where BaoStock skipped updates the delay cannot be measured and counts as zero here, so the true share is somewhat higher.
-- **Look-ahead.** No change is clearly earlier in the archive than in BaoStock.
+- **Look-ahead.** No paired change is clearly earlier in the archive than in BaoStock.
+  Archive changes with no BaoStock change to pair with are outside this count (section 3, "The other direction"): 1 of 3 shows the archive ahead of every later BaoStock list: CSI500 SZ302132, added 2023-12-29, missing from the 2 BaoStock lists dated 2024-01-29 to 2024-02-26.
 - **Not settled by this audit.** 1202 changes appear in the archive between two BaoStock lists. Where the
   two lists are a week apart, the archive is at most a few days ahead of BaoStock's next Monday list, which
   is what an archive that is exactly on time looks like. Where BaoStock skipped updates, nothing can be
@@ -545,12 +563,13 @@ One row per BaoStock change day, archive day and outcome; "Stocks" names up to f
 - CSI300: 417 answers (206 month ends, 211 extra days), downloaded 2026-11-12T22:32:49Z to 2026-11-12T22:53:19Z (UTC) with baostock 00.9.40; 0 needed more than one try.
 - CSI500: 421 answers (206 month ends, 215 extra days), downloaded 2026-11-12T22:32:49Z to 2026-11-12T22:58:55Z (UTC) with baostock 00.9.40; 0 needed more than one try.
 - Hash list: `~/data/baostock_membership/2026-11-12/SHA256SUMS` holds the sha256 of every answer file (838 lines, checkable with
-  `shasum -a 256 -c SHA256SUMS` inside the cache folder). The sha256 of that list itself is
+  `shasum -a 256 -c SHA256SUMS` inside the cache folder); the two download logs, which feed only the download
+  times, client and retry counts above, are not in it. The sha256 of that list itself is
   `20fcbe284013c3a0fc74c8b2762412e8a5e6008dacf60ffc1cb52a65a57a3ef7`.
 - Archive: tag `2026-11-04`; `instruments/csi300.txt` sha256 `29913856f1d81a734cf531c1c5e4584218b1383840ed80f9dbffd3e538de2adf`,
   `instruments/csi500.txt` sha256 `68e0f2baabcb49ee0867dc64d779ec38c237a9716c8cfba12866e04c59c2abbf`,
   `calendars/day.txt` sha256 `6fd735297189e5fbfcf382320b5e7e1765b1c6686d2f6b12974cce5d6d9d4737`.
-- Rebuild this report without any network (it checks every file against the hash list first):
+- Rebuild this report without any network (it checks every answer file against the hash list first):
   `python3 -m uv run python scripts/audit_membership.py --offline --cache-dir ~/data/baostock_membership/2026-11-12`
 - Requests went out one at a time per index, with a pause before each and up to 6 tries with growing waits.
   An empty answer would have been asked for a second time before it was believed.
@@ -570,8 +589,16 @@ One row per BaoStock change day, archive day and outcome; "Stocks" names up to f
 - **The two sources may share an origin.** If BaoStock's history was rebuilt from the same kind of weight
   snapshots as the archive, both can be late in the same way and agree with each other while both are wrong.
   Agreement here is weaker evidence than disagreement.
-- **Only month ends were compared in step 1**, and step 2 only searched months whose two ends differ. A stock
-  that BaoStock added and removed again within one month is invisible unless the same month had another change.
+- **Only month ends were compared in step 1**, and step 2 searched between consecutive usable month ends by
+  halving, never searching a half whose two ends carry the same list. A stock move that BaoStock undid again
+  before the next usable month end is therefore seen only if a halving step happened to fall between the move
+  and its reversal, even when that stretch had other changes. The "undone" count in section 2 is a lower
+  bound, and a stock that moved more than once is dated by the last move the search saw, so its lag can come
+  out too large by the unseen moves. Where a month end was unusable the search spans two months, so such a
+  move can also be undone in the following month; its archive side then appears under "The other direction".
+- **"In the archive from its first day" is given only within 250 trading days of that day.** A BaoStock add
+  of a stock that the archive has listed without a break since its own first day, found later than that, is
+  labelled never shown, although the archive's own add day is simply unknown.
 - **The pairing window is a choice.** 250 trading days; a change the archive shows later than that counts as never shown.
 - **Nothing from 2024-03-01 on was looked at**, so changes in the last months before it may still be shown
   later by the archive ("too close to the cut-off").

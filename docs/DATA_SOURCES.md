@@ -111,9 +111,12 @@ Full report: [results/csi300/membership_audit.md](../results/csi300/membership_a
 CSI300 and CSI500 member lists with BaoStock's from 2007-01-31 to 2024-02-29. It is a report only: it changes no
 data and no decision depends on it.
 
-- **No look-ahead found.** In 0 of 4,950 paired index changes (1,522 CSI300, 3,428 CSI500) does the archive show a
-  change on or before the date of a BaoStock list that still lacked it. "Early" would mean the model knows a stock
-  joins the index before it happened.
+- **No paired change is early.** In 0 of 4,950 paired index changes (1,522 CSI300, 3,428 CSI500) does the archive show
+  a change on or before the date of a BaoStock list that still lacked it. "Early" would mean the model knows a stock
+  joins the index before it happened. One archive change has no BaoStock change to pair with and is ahead by that
+  definition: the CSI500 add of SZ302132 on 2023-12-29 (the phantom 501st member, section 1), which both later
+  BaoStock lists (dated 2024-01-29 and 2024-02-26) lack. It has no price before the test period and never enters the
+  model's universe.
 - **The archive is late.** For the 17 twice-yearly reviews from 2013-12 to 2023-12 it shows the change 9 to 14
   trading days after BaoStock (median 13 for CSI300, 12 for CSI500): on the last trading day of June and December
   instead of the day after the second Friday. A single stock that moves between reviews waits for the archive's
@@ -129,8 +132,9 @@ data and no decision depends on it.
   1,202 changes sit "between two BaoStock lists" with the archive ahead: 767 by at most 4 trading days (what an
   on-time archive looks like next to a weekly list, mostly CSI300 reviews before mid-2013) and 435 inside
   BaoStock's gaps. Those cannot be settled without the index provider's official effective dates.
-- The BaoStock answers are cached outside the repo (838 files, hash list sha256 `20fcbe28...`), and
-  `scripts/audit_membership.py --offline` rebuilds the report from the cache byte for byte.
+- The BaoStock answers are cached outside the repo (838 files, each in a hash list, sha256 `20fcbe28...`; the two
+  download logs, which feed only the download times, client and retry counts in the report's section 5, are not in
+  the list), and `scripts/audit_membership.py --offline` rebuilds the report from the cache byte for byte.
 
 ## 2. Independent markets with free, survivorship-aware data (ranked)
 

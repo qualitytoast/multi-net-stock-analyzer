@@ -357,6 +357,14 @@ def test_the_download_script_and_the_converter_use_the_same_pins(tmp_path):
     assert re.fullmatch(r"[0-9a-f]{64}", kr.DUMP_BIN_SHA256)
 
 
+def test_the_download_script_rejects_an_unknown_argument_before_fetching_anything(tmp_path):
+    env = {**os.environ, "DL_DIR": str(tmp_path / "dl"), "TOOLS_DIR": str(tmp_path / "tools")}
+    done = subprocess.run([str(ROOT / "scripts/get_kr_data.sh"), "--print-pin"], capture_output=True, text=True, env=env)
+    assert done.returncode == 2 and done.stdout == ""
+    assert done.stderr.strip() == "unknown argument: --print-pin (the options are --write-manifest and --print-pins)"
+    assert not any(tmp_path.iterdir())
+
+
 def test_kr200_config_names_the_pinned_data():
     manifest = ROOT / "scripts/kr_data.sha256"
     assert sorted(kr.read_manifest(manifest)) == [f"data/marcap-{year}.parquet" for year in range(1995, 2027)]

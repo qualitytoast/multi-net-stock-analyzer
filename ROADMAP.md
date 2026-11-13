@@ -86,11 +86,12 @@ Last updated: 2026-11-12
     member-days priced. Known gaps: no cash dividends, no delisting returns, re-opening moves missing from returns.
   - US: the free coverage check **failed** (91.06% against 95.0%; stocks that left the index 70.37%), so no US data
     was built.
-  - Membership audit against BaoStock: no look-ahead found; the archive shows index reviews 9 to 14 trading days
-    late and changes its list only about twice a year.
+  - Membership audit against BaoStock: no paired change early (0 of 4,950); one unpaired archive-ahead add (SZ302132,
+    the phantom member, never in the universe); the archive shows index reviews 9 to 14 trading days late and
+    changes its list only about twice a year.
   - Built for this: per-market price limits (`trading.price_limits`), a new-listing filter (`data.min_traded_days`),
     `data.exclude_codes`, per-year membership checks in the data report (`qa.membership_checks`), and reports for
-    markets without paper numbers; 415 tests.
+    markets without paper numbers; 417 tests.
   - Paper config unchanged: frozen hashes equal, both committed CSI300 data reports rebuilt byte for byte, rebuilt
     CSI300 panels equal the saved ones. No model was trained, so the try count stays at 16.
 

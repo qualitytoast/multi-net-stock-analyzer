@@ -25,6 +25,9 @@ if [[ "${1:-}" == "--print-pins" ]]; then
     printf '%s=%s\n' "$name" "${!name}"
   done
   exit 0
+elif [[ $# -gt 0 && "$1" != "--write-manifest" ]]; then
+  echo "unknown argument: $1 (the options are --write-manifest and --print-pins)" >&2
+  exit 2
 fi
 
 DL_DIR="${DL_DIR:-$HOME/data/marcap/$MARCAP_COMMIT}"

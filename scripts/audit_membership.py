@@ -704,6 +704,45 @@ def archive_gap(result: dict, cal: Calendar) -> dict:
 
 
 # The report ------------------------------------------------------------------------------------------------------
+def unpaired_facts(result: dict) -> list[dict]:
+    """For each archive change that BaoStock never pairs: what BaoStock's lists dated on or after the archive's
+    day (among those this audit asked for) say about that stock. "ahead" means every such list still shows the
+    old state, so the archive shows the change before BaoStock does, the pattern of a clearly early change."""
+    index = result["index"]
+    facts = []
+    for day, kind, code in result["archive_only"]:
+        later = [a for a in result["answers"] if usable(a, index) and a.update_date is not None and a.update_date >= day]
+        holds = sum(code in a.codes for a in later)
+        dated = sorted(a.update_date for a in later)
+        facts.append({
+            "date": day, "kind": kind, "code": code, "lists": len(later), "holds": holds,
+            "dated": (dated[0], dated[-1]) if dated else None,
+            "ahead": bool(later) and holds == (0 if kind == ADD else len(later)),
+        })  # fmt: skip
+    return facts
+
+
+def later_lists(fact: dict) -> str:
+    if fact["dated"] is None:
+        return "no later BaoStock list"
+    first, last = fact["dated"]
+    return f"the BaoStock list dated {first}" if first == last else f"the {fact['lists']} BaoStock lists dated {first} to {last}"
+
+
+def unpaired_summary(results: list[dict], unpaired: dict[str, list[dict]]) -> str:
+    """One sentence on the archive changes BaoStock never pairs, for "In short" and section 4."""
+    total = sum(len(facts) for facts in unpaired.values())
+    if not total:
+        return "Every archive change in the window has a BaoStock change to pair with."
+    ahead = [(r["index"].name, f) for r in results for f in unpaired[r["index"].key] if f["ahead"]]
+    named = "; ".join(
+        f"{name} {f['code']}, {'added' if f['kind'] == ADD else 'dropped'} {f['date']}, "
+        f"{'missing from' if f['kind'] == ADD else 'still in'} {later_lists(f)}" for name, f in ahead)  # fmt: skip
+    return (f"Archive changes with no BaoStock change to pair with are outside this count (section 3, \"The other direction\"): "
+            f"{len(ahead)} of {total} {'shows' if len(ahead) == 1 else 'show'} the archive ahead of every later BaoStock list"
+            + (f": {named}." if ahead else "."))  # fmt: skip
+
+
 MODEL_START = "2012-01-01"  # the first date the model trains on (configs/csi300.yaml)
 
 
@@ -892,6 +931,8 @@ def render(results: list[dict], cal: Calendar, ends: list[str], cache: dict) -> 
     clear = [c for c in timed if c.timing == EARLY_CLEAR]
     unclear = [c for c in timed if c.timing == EARLY_UNCLEAR]
     stale_months = [(r["index"].name, m) for r in results for m in r["months"] if m.status == "ok" and m.age > FRESH_DAYS]
+    unpaired = {r["index"].key: unpaired_facts(r) for r in results}
+    unpaired_note = unpaired_summary(results, unpaired)
 
     say("# Membership timing audit: CSI300 and CSI500 (Rule MA)")
     say("")
@@ -929,10 +970,10 @@ def render(results: list[dict], cal: Calendar, ends: list[str], cache: dict) -> 
         say(f"- **Look-ahead check: {len(clear)} of {len(timed)} paired changes ({pct(len(clear) / len(timed), 1)}) show up in the archive "
             "clearly EARLIER than in BaoStock**, that is on or before the date of a BaoStock list that still lacked the "
             "change. They are listed in section 3. Each is either look-ahead in the archive or a late entry in "
-            "BaoStock; this audit cannot tell which.")  # fmt: skip
+            f"BaoStock; this audit cannot tell which. {unpaired_note}")  # fmt: skip
     else:
         say(f"- **Look-ahead check: in none of the {len(timed)} paired changes does the archive show the change clearly EARLIER "
-            "than BaoStock** (on or before the date of a BaoStock list that still lacked it).")  # fmt: skip
+            f"than BaoStock** (on or before the date of a BaoStock list that still lacked it). {unpaired_note}")  # fmt: skip
     if unclear:
         in_week = [c for c in unclear if c.week]
         say(f"- Another {len(unclear)} changes ({pct(len(unclear) / len(timed), 1)}) show up in the archive before BaoStock's new list "
@@ -1128,8 +1169,9 @@ def render(results: list[dict], cal: Calendar, ends: list[str], cache: dict) -> 
         say("- **Which day was used, and why:** the day found by direct queries, because the update date does not agree")
         say("  with it in every case (see the table).")
     undone = ", ".join(f"{r['index'].name} {r['undone']}" for r in results)
-    say(f"- Stock moves that BaoStock undid again within the same month (not counted as changes): {undone}. Changes")
-    say(f"  whose BaoStock day could not be pinned to one trading day because of unusable answers: {sum(not c.exact for c in all_changes)}.")
+    say(f"- Stock moves that BaoStock undid again before the next usable month end, as far as the search saw them (not")
+    say(f"  counted as changes; a lower bound, see \"Limits\"): {undone}. Changes whose BaoStock day could not be pinned")
+    say(f"  to one trading day because of unusable answers: {sum(not c.exact for c in all_changes)}.")
     say("")
     if stale_months:
         say(f"Month ends at which BaoStock's list was more than {FRESH_DAYS} days old:")
@@ -1233,8 +1275,25 @@ def render(results: list[dict], cal: Calendar, ends: list[str], cache: dict) -> 
     say("")
     say(f"These are stock moves in the archive with no BaoStock change of the same stock and direction within {window}")
     say("trading days. Some are the other half of a \"never shown\" case above (the two sources swapped different")
-    say(f"stocks). One shortly after {ends[0]} can also belong to a BaoStock change from before the audit window.")
+    say("stocks). One can also be the archive's side of a BaoStock move that was undone again before the next usable")
+    say(f"month end (section 2), which this audit does not count as a change. One shortly after {ends[0]} can also")
+    say("belong to a BaoStock change from before the audit window.")
     say("")
+    if any(unpaired.values()):
+        say("What BaoStock's lists dated on or after the archive's day (among those this audit asked for) say about each:")
+        say("")
+        say(md_table(
+            ["Index", "Archive day", "Change", "Stock", "Later BaoStock lists", "Of which hold the stock", "Archive ahead of all of them"],
+            [[r["index"].name, f["date"], f["kind"], f["code"], f"{f['lists']} ({f['dated'][0]} to {f['dated'][1]})" if f["dated"] else "0",
+              f["holds"], "yes" if f["ahead"] else "no"] for r in results for f in unpaired[r["index"].key]],
+        ))  # fmt: skip
+        say("")
+        say("Reading: an add that none of the later lists holds, or a drop that all of them still hold, is a change the")
+        say("archive shows before BaoStock does, the pattern of a clearly early change above. These have no BaoStock")
+        say("change to pair with, so they are not in the look-ahead count; \"In short\" and section 4 name them instead.")
+        say("Later lists that agree with the archive mean BaoStock shows the same state and made the move before the")
+        say(f"audit window or more than {window} trading days away.")
+        say("")
 
     say("### Every day on which BaoStock's list changes")
     say("")
@@ -1270,10 +1329,11 @@ def render(results: list[dict], cal: Calendar, ends: list[str], cache: dict) -> 
             "joined). Where BaoStock skipped updates the delay cannot be measured and counts as zero here, so the true "
             "share is somewhat higher.")  # fmt: skip
     if clear:
-        say(f"- **Look-ahead.** {len(clear)} changes are clearly earlier in the archive than in BaoStock (section 3). They need")
+        say(f"- **Look-ahead.** {len(clear)} paired changes are clearly earlier in the archive than in BaoStock (section 3). They need")
         say("  a look by the owner before the archive's membership is called free of look-ahead.")
     else:
-        say("- **Look-ahead.** No change is clearly earlier in the archive than in BaoStock.")
+        say("- **Look-ahead.** No paired change is clearly earlier in the archive than in BaoStock.")
+    say(f"  {unpaired_note}")
     if unclear:
         say(f"- **Not settled by this audit.** {len(unclear)} changes appear in the archive between two BaoStock lists. Where the")
         say("  two lists are a week apart, the archive is at most a few days ahead of BaoStock's next Monday list, which")
@@ -1291,12 +1351,13 @@ def render(results: list[dict], cal: Calendar, ends: list[str], cache: dict) -> 
         say(f"- {r['index'].name}: {info['files']} answers ({len(ends)} month ends, {info['files'] - len(ends)} extra days), downloaded "
             f"{info['first']} to {info['last']} (UTC) with {info['client']}; {info['retried']} needed more than one try.")  # fmt: skip
     say(f"- Hash list: `{cache['dir']}/{SHA_LIST}` holds the sha256 of every answer file ({cache['listed']} lines, checkable with")
-    say(f"  `shasum -a 256 -c {SHA_LIST}` inside the cache folder). The sha256 of that list itself is")
+    say(f"  `shasum -a 256 -c {SHA_LIST}` inside the cache folder); the two download logs, which feed only the download")
+    say("  times, client and retry counts above, are not in it. The sha256 of that list itself is")
     say(f"  `{cache['list_sha']}`.")
     say(f"- Archive: tag `{ARCHIVE_TAG}`; `instruments/csi300.txt` sha256 `{cache['archive']['csi300']}`,")
     say(f"  `instruments/csi500.txt` sha256 `{cache['archive']['csi500']}`,")
     say(f"  `calendars/day.txt` sha256 `{cache['archive']['calendar']}`.")
-    say("- Rebuild this report without any network (it checks every file against the hash list first):")
+    say("- Rebuild this report without any network (it checks every answer file against the hash list first):")
     say(f"  `python3 -m uv run python scripts/audit_membership.py --offline --cache-dir {cache['dir']}`")
     say("- Requests went out one at a time per index, with a pause before each and up to 6 tries with growing waits.")
     say("  An empty answer would have been asked for a second time before it was believed.")
@@ -1318,8 +1379,16 @@ def render(results: list[dict], cal: Calendar, ends: list[str], cache: dict) -> 
     say("- **The two sources may share an origin.** If BaoStock's history was rebuilt from the same kind of weight")
     say("  snapshots as the archive, both can be late in the same way and agree with each other while both are wrong.")
     say("  Agreement here is weaker evidence than disagreement.")
-    say("- **Only month ends were compared in step 1**, and step 2 only searched months whose two ends differ. A stock")
-    say("  that BaoStock added and removed again within one month is invisible unless the same month had another change.")
+    say("- **Only month ends were compared in step 1**, and step 2 searched between consecutive usable month ends by")
+    say("  halving, never searching a half whose two ends carry the same list. A stock move that BaoStock undid again")
+    say("  before the next usable month end is therefore seen only if a halving step happened to fall between the move")
+    say("  and its reversal, even when that stretch had other changes. The \"undone\" count in section 2 is a lower")
+    say("  bound, and a stock that moved more than once is dated by the last move the search saw, so its lag can come")
+    say("  out too large by the unseen moves. Where a month end was unusable the search spans two months, so such a")
+    say("  move can also be undone in the following month; its archive side then appears under \"The other direction\".")
+    say(f"- **\"In the archive from its first day\" is given only within {window} trading days of that day.** A BaoStock add")
+    say("  of a stock that the archive has listed without a break since its own first day, found later than that, is")
+    say("  labelled never shown, although the archive's own add day is simply unknown.")
     say(f"- **The pairing window is a choice.** {window} trading days; a change the archive shows later than that counts as never shown.")
     say(f"- **Nothing from {LOCK_START} on was looked at**, so changes in the last months before it may still be shown")
     say("  later by the archive (\"too close to the cut-off\").")

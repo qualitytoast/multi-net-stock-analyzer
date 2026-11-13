@@ -43,7 +43,7 @@ Common to every entry unless stated otherwise:
 | E18 | 2026-11-08 | 6 (rerun) | Walk-forward tooling: retrain the paper config with the new code (regression check) | `configs/csi300.yaml` (`d2a65e9a6a237d2c`) | `paper_rerun3` | identical to E3 | check passed; not a candidate |
 | E19 | 2026-11-08 | - (placebo) | Walk-forward placebo (Rule WP): paper config and single network, 11 folds x 5 seeds on shuffled answers | `configs/walkforward/placebo/` | `runs/csi300_wf`: `placebo`, `placebo_single`, `smoke` | walk-forward IC +0.0010 [-0.0031, +0.0051] and +0.0028 [-0.0025, +0.0081] (not validation) | check passed |
 | E20 | 2026-11-12 | - (data only) | More data: CSI500, CSI1000 and the whole A-share market prepared from the pinned archive (Rules ND, CU) | `configs/csi500.yaml` (`d4c1d46e5e627dc6`), `configs/csi1000.yaml` (`414c423fc72b4314`), `configs/ashare.yaml` (`b44cf7c1e1d0bfe0`) and their walk-forward variants | none (prepare only) | no model run | data kept; the whole-market walk-forward data does not fit in memory and is not prepared |
-| E21 | 2026-11-12 | - (data check) | More data: membership timing audit, the archive's CSI300 and CSI500 lists against BaoStock (Rule MA) | `scripts/audit_membership.py` | none | no model run | report only: no look-ahead found; the archive shows index reviews 9-14 trading days late |
+| E21 | 2026-11-12 | - (data check) | More data: membership timing audit, the archive's CSI300 and CSI500 lists against BaoStock (Rule MA) | `scripts/audit_membership.py` | none | no model run | report only: no paired change early (0 of 4,950); one unpaired archive-ahead add (SZ302132, the phantom member, never in the universe); the archive shows index reviews 9-14 trading days late |
 | E22 | 2026-11-12 | - (data check) | More data: free US coverage check, fja05680 members against Tiingo's public ticker list (Rule UC) | `src/detmaso/data/ingest/us_coverage.py` | none | no model run | **failed** the 95.0% bar (91.06%): the free S&P 500 route is not good enough as it stands |
 | E23 | 2026-11-12 | - (data check) | More data: South Korea go/no-go, conversion and prepare (Rules KG, KU) | `configs/kr200.yaml` (`b126ac6b3a144ab5`) and its walk-forward variants | none (prepare only) | no model run | go/no-go **passed** (3 of 3); data kept, with known gaps |
 
@@ -280,8 +280,8 @@ for byte, and the rebuilt CSI300 panels equal the saved ones in every field (no 
 
 - **Inputs:** the pinned archive's `instruments/csi300.txt` and `csi500.txt`; BaoStock (anonymous login, package
   00.9.40) queried 2026-11-12 22:32Z to 22:58Z for 206 month ends (2007-01-31 to 2024-02-29) plus the days needed to
-  date each change. All 838 answers are cached outside the repo with a hash list (sha256 `20fcbe28...`); the offline
-  mode rebuilds the report byte for byte.
+  date each change. All 838 answers are cached outside the repo with a hash list (sha256 `20fcbe28...`; the two
+  download logs are not in it); the offline mode rebuilds the report byte for byte.
 - **Results:**
 
   | | CSI300 | CSI500 |
@@ -289,7 +289,8 @@ for byte, and the rebuilt CSI300 panels equal the saved ones in every field (no 
   | Month-end mismatch share, all 206 month ends | 0.42% (258 / 61,928) | 0.56% (582 / 103,292) |
   | Month-end mismatch share, 187 month ends with a fresh BaoStock list | 0.11% | 0.08% |
   | Index changes paired | 1,522 | 3,428 |
-  | Archive clearly earlier than BaoStock (look-ahead) | 0 | 0 |
+  | Paired changes with the archive clearly earlier than BaoStock (look-ahead) | 0 | 0 |
+  | Archive changes with no BaoStock partner, ahead of every later BaoStock list | 0 | 1 (SZ302132, added 2023-12-29) |
   | Lag in trading days, changes BaoStock dates to the week: median / 90th percentile / longest | 9 / 14 / 102 | 13 / 21 / 98 |
   | Changes the archive never shows | 2 | 6 |
   | Member-days where the archive still lists a stock BaoStock had dropped, 2012-01 on | 0.55% | 1.00% |
@@ -297,7 +298,8 @@ for byte, and the rebuilt CSI300 panels equal the saved ones in every field (no 
 - **Reading:** the archive is late, not early. Reviews since 2013-12 appear 9 to 14 trading days late; single-stock
   changes between reviews wait up to about 5 months, because the archive's list changes on only about 40 days in
   17 years. For CSI300 reviews before mid-2013 the archive is 0 to 4 trading days ahead of BaoStock's weekly list,
-  which BaoStock cannot settle either way.
+  which BaoStock cannot settle either way. The one unpaired archive-ahead case is the phantom 501st CSI500 member
+  (E20): no price before the test period, never in the model's universe.
 - **Limits:** BaoStock is unofficial, weekly at best, and skipped updates between 2021-06 and 2023-03; the splits
   that separate its own delays from the archive's were added after the first comparisons showed those gaps (the
   all-inclusive numbers are shown next to them in the report).

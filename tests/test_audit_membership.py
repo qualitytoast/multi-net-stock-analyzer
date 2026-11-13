@@ -445,6 +445,37 @@ def test_main_rebuilds_the_same_report_offline_and_stays_out_of_the_locked_perio
     assert not [path for path in cache_dir.glob("*/*.csv") if path.stem >= am.LOCK_START]
 
 
+def test_unpaired_facts_tell_an_archive_ahead_change_from_one_baostock_made_earlier():
+    """By the report's own definition: the archive is ahead when every BaoStock list dated on or after its day still
+    shows the old state (an add it lacks, a drop it still holds). Lists dated before that day and unusable ones
+    say nothing."""
+    def answer(date, update, *numbers):
+        return am.Answer(date, len(numbers), codes(*numbers), (update,))
+
+    answers = [
+        answer("2021-01-29", "2021-01-25", 1, 2, 3, 4),
+        answer("2021-02-26", "2021-02-22", 1, 2, 3, 4),
+        answer("2021-03-31", "2021-03-29", 1, 2, 3, 4),
+        answer("2021-04-30", "2021-04-26", 1, 2),  # obviously wrong size: unusable, never counted
+    ]
+    result = {"index": TINY, "answers": answers, "archive_only": [
+        ("2021-02-01", am.ADD, "SH600005"),  # no later list holds it: the archive is ahead
+        ("2021-02-01", am.DROP, "SH600001"),  # every later list still holds it: the archive is ahead
+        ("2021-02-01", am.ADD, "SH600002"),  # every later list holds it: BaoStock had it already
+        ("2021-03-30", am.DROP, "SH600003"),  # the 2021-03-29 list is dated before that day: no later list
+    ]}  # fmt: skip
+    facts = am.unpaired_facts(result)
+    assert [(f["code"], f["lists"], f["holds"], f["ahead"]) for f in facts] == [
+        ("SH600005", 2, 0, True), ("SH600001", 2, 2, True), ("SH600002", 2, 2, False), ("SH600003", 0, 0, False)]
+    assert facts[0]["dated"] == ("2021-02-22", "2021-03-29") and facts[3]["dated"] is None
+    assert am.later_lists(facts[0]) == "the 2 BaoStock lists dated 2021-02-22 to 2021-03-29"
+    assert am.later_lists(facts[3]) == "no later BaoStock list"
+    note = am.unpaired_summary([{"index": TINY}], {"tiny": facts})
+    assert note.startswith("Archive changes with no BaoStock change to pair with are outside this count")
+    assert "2 of 4 show the archive ahead of every later BaoStock list: TINY SH600005, added 2021-02-01, missing from the 2 BaoStock lists dated 2021-02-22 to 2021-03-29; TINY SH600001, dropped 2021-02-01, still in the 2 BaoStock lists dated 2021-02-22 to 2021-03-29." in note
+    assert am.unpaired_summary([{"index": TINY}], {"tiny": []}) == "Every archive change in the window has a BaoStock change to pair with."
+
+
 def test_held_from_start_needs_an_unbroken_run_from_the_first_day_within_the_window():
     assert am.held_from_start([(0, 500)], first_day=0, day=40, window=250)
     assert not am.held_from_start([(0, 30), (60, 500)], first_day=0, day=40, window=250)  # the run ended before
