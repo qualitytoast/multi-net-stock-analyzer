@@ -1173,7 +1173,7 @@ def render(results: list[dict], cal: Calendar, ends: list[str], cache: dict) -> 
         say("- **Which day was used, and why:** the day found by direct queries, because the update date does not agree")
         say("  with it in every case (see the table).")
     undone = ", ".join(f"{r['index'].name} {r['undone']}" for r in results)
-    say(f"- Stock moves that BaoStock undid again before the next usable month end, as far as the search saw them (not")
+    say("- Stock moves that BaoStock undid again before the next usable month end, as far as the search saw them (not")
     say(f"  counted as changes; a lower bound, see \"Limits\"): {undone}. Changes whose BaoStock day could not be pinned")
     say(f"  to one trading day because of unusable answers: {sum(not c.exact for c in all_changes)}.")
     say("")

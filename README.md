@@ -283,10 +283,11 @@ scripts/               pinned downloads (China, Korea, US coverage inputs), thei
                        the membership audit
 src/detmaso/
   config.py            typed config; every assumption is a named value; post-paper flags, `base:` inheritance
-                       (one file or a list), placebo, walkforward and trading (evaluation-only) sections
+                       (one file or a list), placebo, walkforward, trading and qa (evaluation-only) sections
   data/                qlib_io, returns, labels, features (34), market_state (12), regimes, splits, panel, qa,
                        placebo (answers shuffled in 20-day blocks),
-                       ingest/ (kr: the Korea converter and its go/no-go checks; us_coverage: the free US check)
+                       ingest/ (kr: the Korea converter and its go/no-go checks; us_coverage: the free US check;
+                       pins: reads the pin files in scripts/)
   model/               agent MLP, scheduler (window encoders + attention + head), DetMASO,
                        single network baseline (single.py), factory (model.kind)
   losses/              soft rank (Blondel et al. L2, exact PAV), masked statistics, the full objective,
@@ -304,7 +305,8 @@ src/detmaso/
 tests/                 the plan's 30 checks plus the post-MVP ones (frozen paper config, golden training
                        run, single network, config inheritance, comparison statistics, balance penalty,
                        placebo, deflated metrics, try ledger, rules, walk-forward folds and runner, trading,
-                       the keep rule)
+                       the keep rule, the newer markets' configs, the Korea converter, the US coverage check,
+                       the membership audit, the pin files)
 ```
 
 ## Copyright
