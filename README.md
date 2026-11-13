@@ -135,7 +135,7 @@ try numbers from [results/csi300/trials.csv](results/csi300/trials.csv), validat
 # Python 3.12 is required (pyqlib 0.9.7 has no 3.13 wheels); uv installs it for you.
 uv sync
 ./scripts/get_cn_data.sh        # pinned community Qlib CN dataset, verified by sha256 (about 570 MB)
-uv run pytest                   # 420 tests; data-dependent ones skip until `prepare` has run
+uv run pytest                   # 421 tests; data-dependent ones skip until `prepare` has run
 
 # Optional, South Korea: pinned source (about 1 GB), then the go/no-go checks and the conversion it prints
 ./scripts/get_kr_data.sh

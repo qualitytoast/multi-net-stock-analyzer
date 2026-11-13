@@ -643,6 +643,13 @@ def _pct(part: float, whole: float) -> str:
     return "n/a" if not whole else f"{part / whole:.2%}"
 
 
+def rows_across_cutoff(before: pd.DataFrame, codes: list[str], last_row: pd.Series, last_checked: pd.Timestamp) -> list[str]:
+    """Codes with usable rows before ``CHECK_END`` (``before``) and from ``CHECK_END`` on (``last_row``), but none on
+    ``last_checked``: the only stocks whose "ends early" and "stopped for good" status depends on which dates are read."""
+    last_before = before.groupby("Code")["Date"].max()
+    return [c for c in codes if last_before.get(c, pd.Timestamp.min) < last_checked and last_row[c] >= CHECK_END]
+
+
 def render_conversion_report(conv: Converted, info: dict) -> str:
     cal = conv.calendar[conv.calendar < CHECK_END]
     uni = conv.universe
@@ -674,6 +681,8 @@ def render_conversion_report(conv: Converted, info: dict) -> str:
         year_rows.append([year, len(with_members), int(with_members.min()), f"{with_members.median():.0f}", int(per_day.max()), f"{n_md:,}", _pct(n_priced, n_md), n_stopped])
 
     adj = conv.adjusted[conv.adjusted["Date"] < CHECK_END]
+    later_only = sorted(set(adj["Code"]) - set(picked_before))
+    spanning = rows_across_cutoff(adj, picked_before, uni.last_row, last_checked)
     is_step = (adj["step"] - 1.0).abs() > STEP_EPS
     step_rows = []
     for year, part in adj.groupby(adj["Date"].dt.year):
@@ -706,10 +715,11 @@ def render_conversion_report(conv: Converted, info: dict) -> str:
         f"- **Every statistic below uses only dates before {CHECK_END.date()}** (last date checked: {last_checked.date()}), except where rows "
         f"dated from {CHECK_END.date()} on are consulted: (1) one conversion integrity count marked \"(all dates)\", the number of converted "
         "rows without a usable base price, a check that has to cover every converted row; (2) whether a stock's data \"ends early\" and "
-        "whether a member \"stopped for good\" are judged from the stock's last row over all source dates (checked for this build: no "
-        f"member has a gap that spans {CHECK_END.date()}, so both counts are the same as with rows before that date only); (3) the factor "
-        f"table covers the stocks picked on any selection date, {adj['Code'].nunique() - len(picked_before)} of them picked only on "
-        f"selection dates on or after {CHECK_END.date()}, using only their rows before {CHECK_END.date()}.",
+        f"whether a member \"stopped for good\" are judged from the stock's last row over all source dates ({len(spanning)} picked stocks "
+        f"have rows on both sides of {CHECK_END.date()} but none on {last_checked.date()}, so the two counts differ by at most "
+        f"{len(spanning)} from what rows before {CHECK_END.date()} alone would give); (3) the factor table covers the "
+        f"{adj['Code'].nunique()} stocks picked on any selection date that have rows before {CHECK_END.date()}, {len(later_only)} of them "
+        f"picked only on selection dates on or after {CHECK_END.date()}, using only those rows.",
         f"- Universe `{UNIVERSE_NAME}`; index series `{INDEX_SYMBOL}` (synthetic, {INDEX_BASE:g} on {uni.schedule[0].date.date()}); "
         f"stock symbols are `{CODE_PREFIX}` + the 6-character code.",
         "",

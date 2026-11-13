@@ -344,6 +344,24 @@ def test_kg1_pass_and_fail():
     assert kr.check_kg1(after_lock).passed
 
 
+def test_rows_across_cutoff_counts_only_stocks_with_a_gap_over_the_last_checked_day():
+    """The report's header relies on this count: stocks with usable rows before and from 2024-03-01 on, but none on the
+    last checked day, are the only ones whose "ends early" or "stopped for good" status depends on which dates are read."""
+    def rows(code, *dates):
+        return pd.DataFrame({"Code": code, "Date": pd.to_datetime(list(dates))})
+
+    last_checked = pd.Timestamp("2024-02-29")
+    before = pd.concat([
+        rows("000010", "2024-02-28", "2024-02-29"),  # traded on the last checked day, trades on afterwards
+        rows("000020", "2023-12-15"),  # ended for good
+        rows("000030", "2024-01-31"),  # halted over the cut-off, resumes inside the test period
+        rows("000040", "2024-02-29"),  # traded on the last checked day only, trades on afterwards
+    ], ignore_index=True)
+    last_row = pd.Series(pd.to_datetime(["2024-06-28", "2023-12-15", "2024-03-15", "2024-04-30"]), index=["000010", "000020", "000030", "000040"])
+    assert kr.rows_across_cutoff(before, ["000010", "000020", "000030", "000040"], last_row, last_checked) == ["000030"]
+    assert kr.rows_across_cutoff(before, ["000010", "000020", "000040"], last_row, last_checked) == []
+
+
 # Pins and configs --------------------------------------------------------------------------------------------
 def test_the_download_script_and_the_converter_use_the_same_pins(tmp_path):
     """``--print-pins`` is the script's no-network mode: it prints the pins it sourced, which must be the ones this

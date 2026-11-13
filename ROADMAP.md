@@ -91,7 +91,7 @@ Last updated: 2026-11-12
     changes its list only about twice a year.
   - Built for this: per-market price limits (`trading.price_limits`), a new-listing filter (`data.min_traded_days`),
     `data.exclude_codes`, per-year membership checks in the data report (`qa.membership_checks`), and reports for
-    markets without paper numbers; 420 tests.
+    markets without paper numbers; 421 tests.
   - Paper config unchanged: frozen hashes equal, both committed CSI300 data reports rebuilt byte for byte, rebuilt
     CSI300 panels equal the saved ones. No model was trained, so the try count stays at 16.
 
